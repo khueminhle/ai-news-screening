@@ -1,0 +1,29 @@
+[
+ {
+  "symbol": "PLTR",
+  "period": "2026-11-01",
+  "strongBuy": 12,
+  "buy": 19,
+  "hold": 8,
+  "sell": 1,
+  "strongSell": 1
+ },
+ {
+  "symbol": "PLTR",
+  "period": "2026-10-01",
+  "strongBuy": 12,
+  "buy": 16,
+  "hold": 9,
+  "sell": 1,
+  "strongSell": 1
+ },
+ {
+  "symbol": "PLTR",
+  "period": "2026-09-01",
+  "strongBuy": 12,
+  "buy": 16,
+  "hold": 9,
+  "sell": 1,
+  "strongSell": 1
+ }
+]

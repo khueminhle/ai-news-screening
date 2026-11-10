@@ -1,0 +1,24 @@
+{
+  "description": "FRED series the macro connector downloads. Add or remove freely. Find IDs at https://fred.stlouisfed.org (the ID is in the page URL). 'group' is only used to organise the output.",
+  "series": [
+    {"id": "DFF",          "group": "rates",     "label": "Effective federal funds rate"},
+    {"id": "DFEDTARU",     "group": "rates",     "label": "Fed funds target range, upper limit"},
+    {"id": "DGS3MO",       "group": "rates",     "label": "3-month Treasury yield"},
+    {"id": "DGS2",         "group": "rates",     "label": "2-year Treasury yield"},
+    {"id": "DGS10",        "group": "rates",     "label": "10-year Treasury yield"},
+    {"id": "T10Y2Y",       "group": "rates",     "label": "10-year minus 2-year Treasury spread"},
+    {"id": "DFII10",       "group": "rates",     "label": "10-year real (inflation-adjusted) Treasury yield"},
+    {"id": "CPIAUCSL",     "group": "inflation", "label": "Consumer Price Index (CPI)"},
+    {"id": "CPILFESL",     "group": "inflation", "label": "Core CPI (excluding food and energy)"},
+    {"id": "PCEPILFE",     "group": "inflation", "label": "Core PCE price index (Fed's preferred measure)"},
+    {"id": "T5YIE",        "group": "inflation", "label": "5-year breakeven inflation expectation"},
+    {"id": "UNRATE",       "group": "jobs",      "label": "Unemployment rate"},
+    {"id": "PAYEMS",       "group": "jobs",      "label": "Nonfarm payrolls (thousands of jobs)"},
+    {"id": "ICSA",         "group": "jobs",      "label": "Initial jobless claims (weekly)"},
+    {"id": "GDPC1",        "group": "growth",    "label": "Real GDP"},
+    {"id": "VIXCLS",       "group": "markets",   "label": "VIX volatility index"},
+    {"id": "BAMLH0A0HYM2", "group": "markets",   "label": "High-yield corporate bond spread"},
+    {"id": "DTWEXBGS",     "group": "markets",   "label": "US dollar index (broad, trade-weighted)"},
+    {"id": "DCOILWTICO",   "group": "markets",   "label": "WTI crude oil price"}
+  ]
+}

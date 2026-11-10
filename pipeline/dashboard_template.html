@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signal Dashboard __DAY__</title>
+<script>__PLOTLY__</script>
+<style>
+  /* Trading-terminal theme: always dark, amber headers, monospace, dense rows. */
+  :root {
+    --bg: #000000; --panel: #070707; --bar: #ffa028; --bar-ink: #000000; --ink: #e9e9e9; --amber: #ffa028;
+    --muted: #8a8a8a; --line: #262626; --grid: #1b1b1b; --link: #5ec8ff; --up: #19d36b; --down: #ff4d40;
+    --high: #ff4d40; --medium: #ffa028; --chip: #141414; --stale: #ff4d40; --hover: #121212;
+    --mono: Arial, "Helvetica Neue", Helvetica, sans-serif;   /* closest free match to the terminal font (proprietary) */
+    --field: #f7a51c; --field-ink: #000000; --btn: #b3121a; --btn-on: #e02a2a; --navy: #000000; --label: #e6e6e6;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 400 13px/1.35 var(--mono);
+             font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+  header { height: 34px; display: flex; align-items: center; gap: 14px; padding: 0 10px;
+           background: var(--bg); border-bottom: 1px solid var(--amber); }
+  header h1 { font-size: 14px; margin: 0; white-space: nowrap; color: var(--amber); letter-spacing: .06em; }
+  header h1 span { color: var(--ink); }
+  .disclaimer { font-size: 11px; font-weight: 700; color: var(--bar-ink); background: var(--down);
+                padding: 1px 6px; white-space: nowrap; }
+  .spacer { flex: 1; }
+  
+  .fresh { font-size: 11px; color: var(--muted); cursor: help; white-space: nowrap; }
+  .fresh b.ok { color: var(--up); } .fresh b.bad { color: var(--stale); }
+  .tape { height: 24px; display: flex; gap: 22px; align-items: center; padding: 0 10px; overflow: hidden;
+          white-space: nowrap; border-bottom: 1px solid var(--line); background: #050505; font-size: 12px; }
+  .tape b { color: var(--amber); font-weight: 700; margin-right: 6px; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  /* amber input fields with black text, white labels (like terminal input boxes) */
+  select { font: inherit; font-size: 12.5px; font-weight: 700; color: var(--field-ink); background: var(--field);
+           border: 0; border-radius: 0; padding: 1px 4px; height: 20px; }
+  select:focus { outline: 1px solid #fff; }
+  label, .lbl { color: var(--label); font-weight: 700; }
+  button { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 0; border-radius: 0;
+           height: 20px; padding: 0 8px; }
+  /* period keys: dark, amber when selected */
+  .keys button { background: #2a2a2a; color: #f0f0f0; margin-right: 1px; }
+  .keys button:hover { background: #3b3b3b; }
+  .keys button.on { background: var(--field); color: var(--field-ink); }
+  /* action keys: red */
+  button.act { background: var(--btn); color: #fff; }
+  button.act:hover, button.act.on { background: var(--btn-on); box-shadow: inset 0 0 0 1px #fff; }
+  main { height: calc(100% - 58px); display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; }
+  .left { display: grid; grid-template-rows: 1fr 1fr; gap: 6px; min-height: 0; }
+  .panel { background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 3px 6px;
+              background: var(--navy); border-bottom: 1px solid #262626; }
+  .controls h2 { font-size: 13px; margin: 0 6px 0 -6px; padding: 0 10px; background: #000; color: #fff;
+                 font-weight: 700; align-self: stretch; display: flex; align-items: center; letter-spacing: .03em;
+                 border-right: 1px solid #262626; }
+  .controls h2 em { font-style: normal; color: var(--field); margin-left: 6px; }
+  .chart { flex: 1 1 0; min-height: 170px; overflow: hidden; padding: 0 4px; }
+  .narr { flex: 0 0 auto; max-height: 32%; overflow: auto; border-top: 1px solid var(--line); padding: 5px 8px; font-size: 12px; }
+  .narr h3 { font-size: 12px; margin: 3px 0 2px; color: var(--field); letter-spacing: .03em; }
+  .narr p { margin: 0 0 6px; color: #d9d9d9; font-weight: 400; font-size: 13px; }
+  sup a { color: var(--link); text-decoration: none; font-size: 10px; margin-left: 1px; }
+  .news { overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { position: sticky; top: 0; z-index: 1; background: var(--navy); text-align: left; font-size: 12px; color: var(--label);
+       letter-spacing: .02em; border-bottom: 1px solid var(--amber); padding: 4px 6px; cursor: pointer; }
+  td { font-weight: 400; vertical-align: top; border-bottom: 1px solid var(--line); padding: 5px 6px; }
+  tbody tr:nth-child(even) { background: #050505; }
+  tbody tr:hover { background: var(--hover); }
+  td.t { font-weight: 700; white-space: nowrap; color: var(--amber); }
+  td.d { white-space: nowrap; color: var(--muted); }
+  td.title { width: 28%; color: #ffffff; }
+  td.links a { display: inline-block; margin: 0 6px 2px 0; color: var(--link); text-decoration: none;
+               border: 1px solid #1d3a4a; padding: 0 4px; font-size: 11px; }
+  td.links a:hover { background: #0b2230; }
+  .imp { display: inline-block; width: 7px; height: 7px; margin-right: 5px; }
+  .imp.high { background: var(--high); } .imp.medium { background: var(--medium); }
+  .note { color: var(--muted); font-size: 11px; }
+  .legend { font-size: 11px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .legend .imp { margin-left: 8px; }
+  .dtag { display: inline-block; font-size: 9.5px; font-weight: 700; color: #000; background: #8a8a8a;
+          padding: 0 3px; margin: 0 5px 0 8px; line-height: 13px; vertical-align: 1px; }
+  td.t .dtag { margin-left: 0; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-track { background: #000; }
+  ::-webkit-scrollbar-thumb { background: #333; } ::-webkit-scrollbar-thumb:hover { background: #5a3d10; }
+  /* view keys */
+  .views { display: flex; gap: 2px; }
+  .views button { background: #2a2a2a; color: #f0f0f0; height: 22px; padding: 0 12px; }
+  .views button.on { background: var(--field); color: var(--field-ink); }
+  /* financials screen */
+  #viewFin { height: calc(100% - 58px); display: grid; grid-template-columns: 56fr 44fr; gap: 6px; padding: 6px; }
+  .fintables { flex: 1 1 0; overflow: auto; padding: 0 0 6px; }
+  table.fs { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.fs th { text-align: right; white-space: nowrap; background: var(--navy); color: var(--label); position: sticky; top: 0; }
+  table.fs th:first-child, table.fs td:first-child { text-align: left; position: sticky; left: 0; background: var(--panel);
+                                                     z-index: 2; min-width: 190px; }
+  table.fs th:first-child { background: var(--navy); z-index: 3; }
+  table.fs td { text-align: right; white-space: nowrap; font-weight: 600; padding: 3px 6px; border-bottom: 1px solid #161616; }
+  table.fs td a { color: var(--ink); text-decoration: none; }
+  table.fs td a:hover { color: var(--field); text-decoration: underline; }
+  table.fs td.neg a, table.fs td.neg { color: var(--down); }
+  table.fs td.na { color: #555; }
+  table.fs tr.sec td { background: #000 !important; color: var(--field); font-size: 13px; font-weight: 700; text-align: left;
+                       padding-top: 9px; border-bottom: 1px solid var(--field); position: static; }
+  table.fs tr.sub td { color: var(--muted); font-size: 11px; font-weight: 600; }
+  table.fs tr.comp td { color: #b9b9b9; font-style: italic; }
+  table.fs tr.comp td:first-child::after { content: " computed"; font-style: normal; font-size: 10px; color: #000;
+                                           background: #777; padding: 0 3px; margin-left: 5px; }
+  table.fs tbody tr:hover td { background: var(--hover); }
+  td.spark { width: 78px; }
+  .finnote { padding: 5px 8px; border-top: 1px solid var(--line); }
+  .finnarr { flex: 1 1 0; overflow: auto; padding: 6px 10px; }
+  .finnarr section { border-left: 3px solid transparent; padding-left: 8px; margin-bottom: 8px; }
+  .finnarr section.hl { border-left-color: var(--field); background: #0b0b0b; }
+  .finnarr h3 { font-size: 13px; margin: 4px 0 3px; color: var(--field); }
+  .finnarr p { margin: 0; color: #dcdcdc; font-weight: 400; font-size: 13.5px; line-height: 1.5; }
+  /* terminal colour rule: content in orange, labels and section titles in white */
+  .narr p, .finnarr p { color: var(--amber) !important; }
+  td, td.title, table.fs td, table.fs td a, td.t { color: var(--amber) !important; }
+  .tape { color: var(--amber); } .tape b { color: #ffffff; }
+  .controls h2 em, .narr h3, .finnarr h3, table.fs tr.sec td, th, table.fs th, label, .lbl { color: #ffffff !important; }
+  table.fs tr.sec td { border-bottom-color: #ffffff !important; }
+  table.fs td.neg, table.fs td.neg a { color: var(--down) !important; }
+  .up { color: var(--up) !important; } .down { color: var(--down) !important; }
+  td.links a { color: var(--link) !important; }
+  table.fs td:first-child { color: #ffffff !important; }
+  table.fs td.na, table.fs tr.sub td { color: #6a6a6a !important; }
+  /* reading windows: click a narrative box to open it in a movable, resizable window */
+  .narr, .finnarr { cursor: zoom-in; }
+  .narr a, .finnarr a { cursor: pointer; }
+  .pop { position: fixed; width: 680px; height: 480px; min-width: 320px; min-height: 160px; max-width: 98vw; max-height: 96vh;
+         background: #000; border: 1px solid var(--amber); box-shadow: 0 10px 40px rgba(0,0,0,.85);
+         display: flex; flex-direction: column; resize: both; overflow: hidden; z-index: 1000; }
+  .pop .ph { display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 10px; background: #141414;
+             border-bottom: 1px solid var(--amber); cursor: move; user-select: none; }
+  .pop .ph b { color: #fff; font-size: 13px; }
+  .pop .ph .x { margin-left: auto; background: var(--btn); color: #fff; height: 22px; padding: 0 9px; font-size: 13px; }
+  .pop .ph .x:hover { background: var(--btn-on); }
+  .pop .pb { flex: 1 1 auto; overflow: auto; padding: 14px 18px; }
+  .pop .pb h3 { color: #fff; font-size: 15px; margin: 6px 0 6px; }
+  .pop .pb p { color: var(--amber); font-size: 16px; line-height: 1.65; margin: 0 0 12px; }
+  .pop .pb sup a { font-size: 11px; }
+  @media (max-width: 1000px) {
+    main, #viewFin { grid-template-columns: 1fr; height: auto; }
+    .left { grid-template-rows: auto auto; }
+    .chart { min-height: 320px; }
+    header { height: auto; flex-wrap: wrap; padding: 6px 10px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>SIGNAL&gt; <span id="day"></span></h1>
+  <span class="views"><button id="vMarket" class="on">1 MARKET</button><button id="vFin">2 FINANCIALS</button></span>
+  <span class="disclaimer">SIMULATION · NOT INVESTMENT ADVICE</span>
+  <span class="spacer"></span>
+  <label>Security <select id="stockSel"></select></label>
+  <span class="fresh" id="fresh"></span>
+</header>
+<div class="tape" id="tape"></div>
+<main id="viewMarket">
+  <div class="left">
+    <section class="panel">
+      <div class="controls">
+        <h2>GP<em>Equity Chart</em></h2>
+        <span class="lbl">Security</span> <select id="priceTicker"></select>
+        <span class="lbl">Range</span> <span id="pricePeriods" class="keys"></span>
+        <button id="typeBtn" class="act">Candles</button>
+        <button id="modeBtn" class="act">Rel vs Index</button>
+      </div>
+      <div class="chart" id="priceChart"></div>
+      <div class="narr" id="priceNarr"></div>
+    </section>
+    <section class="panel">
+      <div class="controls">
+        <h2>ECO<em>Fed / Macro</em></h2>
+        <span class="lbl">Series</span> <select id="seriesSel"></select>
+        <span class="lbl">Range</span> <span id="macroPeriods" class="keys"></span>
+      </div>
+      <div class="chart" id="macroChart"></div>
+      <div class="narr" id="macroNarr"></div>
+    </section>
+  </div>
+  <section class="panel news">
+    <div class="controls"><h2>NEWS<em>Checked digest</em></h2><span class="note" id="newsCount"></span>
+      <span class="spacer"></span>
+      <span class="legend"><span class="imp high"></span>High importance <span class="imp medium"></span>Medium
+        <span class="dtag">DATA</span>From our price / analyst-count / earnings tables (no news story)</span></div>
+    <table>
+      <thead><tr><th data-k="ticker">Ticker</th><th data-k="date">Date</th><th data-k="title">Title</th>
+                 <th data-k="summary">Summary</th><th>Link</th></tr></thead>
+      <tbody id="newsBody"></tbody>
+    </table>
+  </section>
+</main>
+<div id="viewFin" style="display:none">
+  <section class="panel">
+    <div class="controls">
+      <h2>FA<em>Financial Statements</em></h2>
+      <span class="lbl">Security</span> <select id="finTicker"></select>
+      <span class="lbl">Period</span> <span id="finPeriod" class="keys"></span>
+      <span class="lbl">Show</span> <select id="finCount"></select>
+      <span class="lbl">Statement</span> <span id="finStmt" class="keys"></span>
+    </div>
+    <div class="fintables" id="finTables"></div>
+    <div class="note finnote">As reported in SEC filings (company facts, USD millions unless stated; latest filed value if restated).
+      Quarterly cash flow is year-to-date as filed (3M / 6M / 9M / 12M). Q4 exists only inside the annual figure.
+      Rows marked <i>computed</i> are worked out by Python from the reported lines. Click a number to open its filing.</div>
+  </section>
+  <section class="panel">
+    <div class="controls"><h2>AN<em>Analysis</em></h2><span class="note" id="finMeta"></span></div>
+    <div class="finnarr" id="finNarr"></div>
+  </section>
+</div>
+<script>
+const D = __DATA__;
+const S = {view: "market", finPeriod: "quarterly", finCount: 8, finStmt: "All",
+           ticker: D.tickers[0], period: "1Y", mode: "price", ctype: "line", series: D.series_order[0], mperiod: "All",
+           stock: "ALL", sortKey: null, sortDir: 1};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const PLOT_CFG = {responsive: true, displaylogo: false, modeBarButtonsToRemove: ["lasso2d", "select2d"]};
+
+const COLORS = ["#ffffff", "#f7a51c", "#4fb3ff", "#19d36b", "#ff4d40", "#c792ea"];
+function layout(extra) {
+  const ax = {gridcolor: css("--grid"), linecolor: css("--line"), zerolinecolor: "#444", tickfont: {color: css("--muted")}};
+  const base = {margin: {l: 52, r: 10, t: 6, b: 26}, paper_bgcolor: "#000000", plot_bgcolor: css("--navy"),
+    font: {color: css("--ink"), size: 11, family: css("--mono")}, colorway: COLORS, showlegend: true,
+    legend: {orientation: "h", y: 1.08, x: 0, font: {color: css("--amber")}},
+    hoverlabel: {bgcolor: "#111", bordercolor: css("--amber"), font: {family: css("--mono"), color: "#fff"}},
+    xaxis: {...ax}, yaxis: {...ax}, hovermode: "x unified"};
+  const out = Object.assign(base, extra || {});
+  ["xaxis", "yaxis", "yaxis2"].forEach(k => { if (extra && extra[k]) out[k] = {...ax, ...extra[k]}; });
+  return out;
+}
+
+function drawTape() {
+  const one = (label, s) => {
+    const n = s.adj.length, last = s.adj[n - 1], prev = s.adj[n - 2], chg = (last / prev - 1) * 100;
+    const close = (s.close || s.adj)[n - 1];
+    return `<span><b>${esc(label)}</b>${close.toLocaleString("en-US", {maximumFractionDigits: 2, minimumFractionDigits: 2})}
+            <span class="${chg >= 0 ? "up" : "down"}">${chg >= 0 ? "▲" : "▼"} ${chg.toFixed(2)}%</span></span>`;
+  };
+  $("tape").innerHTML = D.tickers.filter(t => D.prices[t]).map(t => one(t, D.prices[t])).join("") +
+    Object.entries(D.benchmarks).map(([k, s]) => one(s.label, s)).join("") +
+    `<span class="note">last close ${esc(Object.values(D.prices).find(Boolean)?.date.slice(-1)[0] || "")}</span>`;
+}
+
+function startOf(last, period) {
+  const d = new Date(last + "T00:00:00Z");
+  const m = {"1M": 1, "3M": 3, "6M": 6, "1Y": 12, "2Y": 24, "5Y": 60}[period];
+  if (period === "All") return "0000-00-00";
+  if (period === "YTD") return last.slice(0, 4) + "-01-01";
+  d.setUTCMonth(d.getUTCMonth() - m);
+  return d.toISOString().slice(0, 10);
+}
+function cut(x, ys, start) {
+  const i = x.findIndex(v => v >= start);
+  const k = i < 0 ? x.length : i;
+  return [x.slice(k), ys.map(y => y.slice(k))];
+}
+function periodButtons(el, list, key, redraw) {
+  el.innerHTML = "";
+  list.forEach(p => {
+    const b = document.createElement("button");
+    b.textContent = p; b.className = S[key] === p ? "on" : "";
+    b.onclick = () => { S[key] = p; periodButtons(el, list, key, redraw); redraw(); };
+    el.appendChild(b);
+  });
+}
+
+// ---------- narratives with numbered, clickable citations ----------
+function narrHTML(blocks, resolve) {
+  resolve = resolve || (c => D.sources[c]);
+  const refs = {};
+  let html = "";
+  blocks.forEach(b => {
+    if (!b.sentences || !b.sentences.length) {
+      if (b.missing) html += `<h3>${esc(b.title)}</h3><p class="note">${esc(b.missing)}</p>`;
+      return;
+    }
+    html += `<h3>${esc(b.title)}</h3><p>` + b.sentences.map(s => esc(s.text) + s.cites.map(c => {
+      refs[c] = refs[c] || Object.keys(refs).length + 1;
+      const src = resolve(c) || {};
+      return `<sup><a href="${esc(src.url || "#")}" target="_blank" title="${esc(src.label || c)}">[${refs[c]}]</a></sup>`;
+    }).join("")).join(" ") + "</p>";
+  });
+  return html || '<p class="note">No analysis available.</p>';
+}
+
+// ---------- prices ----------
+// Hide days with no trading: weekends, plus weekdays missing from the data (market holidays).
+function tradingBreaks(x) {
+  if (!x.length) return [];
+  const have = new Set(x), holidays = [];
+  const d = new Date(x[0] + "T00:00:00Z"), end = new Date(x[x.length - 1] + "T00:00:00Z");
+  for (; d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const day = d.getUTCDay(), iso = d.toISOString().slice(0, 10);
+    if (day !== 0 && day !== 6 && !have.has(iso)) holidays.push(iso);
+  }
+  return [{bounds: ["sat", "mon"]}, ...(holidays.length ? [{values: holidays}] : [])];
+}
+
+function drawPrice() {
+  const p = D.prices[S.ticker];
+  if (!p) { $("priceChart").innerHTML = '<p class="note">No price data.</p>'; return; }
+  const start = startOf(p.date[p.date.length - 1], S.period);
+  let traces, lay;
+  if (S.mode === "price") {
+    const [x, [o, h, l, c, v]] = cut(p.date, [p.open, p.high, p.low, p.close, p.volume], start);
+    const ma = v.map((_, i) => i >= 14 ? v.slice(i - 14, i + 1).reduce((a, b) => a + b, 0) / 15 : null);
+    const main = S.ctype === "candle"
+      ? {type: "candlestick", x, open: o, high: h, low: l, close: c, name: S.ticker, yaxis: "y",
+         increasing: {line: {color: css("--up")}, fillcolor: css("--up")},
+         decreasing: {line: {color: css("--down")}, fillcolor: css("--down")}}
+      : {type: "scatter", mode: "lines", x, y: c, name: "Last price", yaxis: "y", line: {color: "#ffffff", width: 1.4},
+         fill: "tozeroy", fillgradient: {type: "vertical",
+           colorscale: [[0, "rgba(10,40,80,0.0)"], [1, "rgba(40,140,190,0.85)"]]}};
+    traces = [main,
+      {type: "bar", x, y: v, name: "Volume", yaxis: "y2", marker: {color: "#d9d9d9"}, opacity: .85},
+      {type: "scatter", mode: "lines", x, y: ma, name: "Avg volume (15)", yaxis: "y2", line: {color: "#19d36b", width: 1.4}}];
+    // summary box + last-price tag, like a terminal chart
+    const hiI = c.indexOf(Math.max(...c)), loI = c.indexOf(Math.min(...c));
+    const avg = c.reduce((a, b) => a + b, 0) / c.length, last = c[c.length - 1];
+    const f2 = n => n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const lo = Math.min(...l.filter(z => z != null)), hi = Math.max(...h.filter(z => z != null));
+    const pad = (hi - lo) * 0.06;
+    lay = layout({margin: {l: 10, r: 62, t: 6, b: 24}, showlegend: false, bargap: .25,
+                  xaxis: {rangeslider: {visible: false}, anchor: "y2", rangebreaks: tradingBreaks(x)},
+                  yaxis: {domain: [0.3, 1], side: "right", range: [lo - pad, hi + pad]},
+                  yaxis2: {domain: [0, 0.24], side: "right", tickformat: ".2s"},
+                  annotations: [
+                    {xref: "paper", yref: "paper", x: 0.01, y: 0.99, xanchor: "left", yanchor: "top", align: "left",
+                     showarrow: false, bgcolor: "rgba(0,0,0,0.85)", bordercolor: "#7a7a7a", borderwidth: 1, borderpad: 5,
+                     font: {color: "#ffffff", size: 11, family: css("--mono")},
+                     text: `<b>${esc(S.ticker)} · ${S.period}</b><br>■ Last price  ${f2(last)}<br>`
+                         + `↑ High on ${x[hiI]}  ${f2(c[hiI])}<br>— Average  ${f2(avg)}<br>↓ Low on ${x[loI]}  ${f2(c[loI])}`},
+                    {xref: "paper", yref: "y", x: 1, y: last, xanchor: "left", showarrow: false, text: f2(last),
+                     bgcolor: "#ffffff", font: {color: "#000", size: 11, family: css("--mono")}, borderpad: 2},
+                    {xref: "paper", yref: "paper", x: 0.01, y: 0.235, xanchor: "left", yanchor: "top", showarrow: false,
+                     align: "left", font: {color: "#ffffff", size: 10, family: css("--mono")},
+                     text: '<span style="color:#d9d9d9">■</span> Volume   <span style="color:#19d36b">■</span> Avg volume (15)'}]});
+  } else {
+    traces = [[S.ticker, p], ...Object.entries(D.benchmarks)].map(([name, s]) => {
+      const [x, [a]] = cut(s.date, [s.adj], start);
+      const base = a[0];
+      return {type: "scatter", mode: "lines", x, y: a.map(v => (v / base - 1) * 100), name: s.label || name,
+              line: {width: name === S.ticker ? 2.5 : 1.5}};
+    });
+    lay = layout({margin: {l: 12, r: 52, t: 6, b: 26}, yaxis: {ticksuffix: "%", zeroline: true, side: "right"},
+                  xaxis: {rangebreaks: tradingBreaks(cut(p.date, [], start)[0])}});
+  }
+  const n = D.narratives.stocks[S.ticker];
+  $("priceNarr").innerHTML = narrHTML([{title: `${S.ticker}: last month`, sentences: n,
+    missing: "No analysis for this stock today (no relevant news in the last 30 days, or the check removed it)."}]);
+  Plotly.react("priceChart", traces, lay, PLOT_CFG).then(gd => Plotly.Plots.resize(gd));
+}
+
+// ---------- macro ----------
+function drawMacro() {
+  const s = D.series[S.series];
+  let traces = [], lay = layout(), shapes = [];
+  const unit = s.unit || "";
+  if (s.kind === "curve") {
+    traces = s.lines.map((l, i) => ({type: "scatter", mode: "lines+markers", x: s.maturities, y: l.y,
+      name: `${l.label} (${l.date})`, line: {width: i === 0 ? 3 : 1.5, dash: i === 0 ? "solid" : "dot"}}));
+    lay = layout({hovermode: "closest", yaxis: {ticksuffix: "%"}});
+  } else {
+    const start = startOf(s.x[s.x.length - 1], S.mperiod);
+    const [x, ys] = cut(s.x, s.ys, start);
+    const kinds = {
+      line: () => [{type: "scatter", mode: "lines", x, y: ys[0], name: s.label, line: {color: "#ffffff", width: 1.4},
+                    fill: "tozeroy", fillgradient: {type: "vertical",
+                      colorscale: [[0, "rgba(10,40,80,0.05)"], [1, "rgba(40,140,190,0.75)"]]}}],
+      step: () => [{type: "scatter", mode: "lines", x, y: ys[0], name: s.label, line: {shape: "hv", width: 2}}],
+      area: () => [{type: "scatter", mode: "lines", x, y: ys[0], name: s.label, fill: "tozeroy", fillcolor: "rgba(255,160,40,0.15)"}],
+      bars: () => [{type: "bar", x, y: ys[0], name: s.label,
+                    marker: {color: ys[0].map(v => v >= 0 ? css("--amber") : css("--down"))}}],
+      ma: () => [{type: "scatter", mode: "lines", x, y: ys[0], name: s.label, line: {width: 1, color: "#666"}},
+                 {type: "scatter", mode: "lines", x, y: ys[1], name: "4-week average", line: {width: 2.5}}],
+    };
+    traces = (kinds[s.kind] || kinds.line)();
+    if (s.zero) shapes.push({type: "line", xref: "paper", x0: 0, x1: 1, y0: 0, y1: 0, line: {color: css("--muted"), dash: "dot"}});
+    (s.bands || []).forEach(b => shapes.push({type: "rect", xref: "paper", x0: 0, x1: 1, y0: b[0], y1: b[1],
+      fillcolor: b[2], opacity: .12, line: {width: 0}, layer: "below"}));
+    // filled lines would stretch the axis to zero: pin it to the visible data (+ padding)
+    const vals = ys[0].filter(z => z != null), mn = Math.min(...vals), mx = Math.max(...vals), pad = (mx - mn) * 0.08 || 1;
+    const range = s.kind === "line" && !s.zero && vals.length ? [mn - pad, mx + pad] : undefined;
+    lay = layout({shapes, yaxis: {ticksuffix: s.suffix || "", tickprefix: s.prefix || "", range, side: "right",
+                  title: {text: unit, font: {size: 10}}}, margin: {l: 10, r: 62, t: 6, b: 24}});
+  }
+  $("macroPeriods").style.display = s.kind === "curve" ? "none" : "";
+  $("macroNarr").innerHTML = narrHTML([
+    {title: "Big picture (latest macro updates)", sentences: D.narratives.macro.big_picture,
+     missing: "Big-picture analysis unavailable today."},
+    {title: `${s.label}: latest update and its role`, sentences: D.narratives.macro.series[S.series] || [],
+     missing: "No note for this series today."}]);
+  Plotly.react("macroChart", traces, lay, PLOT_CFG).then(gd => Plotly.Plots.resize(gd));
+}
+
+// ---------- news table (from the checked digest) ----------
+function drawNews() {
+  let rows = D.news.filter(r => S.stock === "ALL" || r.ticker === S.stock);
+  if (S.sortKey) rows = rows.slice().sort((a, b) => (a[S.sortKey] > b[S.sortKey] ? 1 : -1) * S.sortDir);
+  $("newsCount").textContent = `${rows.length} item(s) from the checked digest of ${D.day}`;
+  $("newsBody").innerHTML = rows.map(r => `<tr>
+      <td class="t">${r.importance ? `<span class="imp ${esc(r.importance)}"></span>`
+                      : (r.title.startsWith("Data:") ? '<span class="dtag">DATA</span>' : "")}${esc(r.ticker)}</td>
+      <td class="d">${esc(r.date)}</td><td class="title">${esc(r.title)}</td><td>${esc(r.summary)}</td>
+      <td class="links">${r.links.map(l => `<a href="${esc(l.url)}" target="_blank">${esc(l.label)}</a>`).join("")}</td>
+    </tr>`).join("") || '<tr><td colspan="5" class="note">No checked news for this selection.</td></tr>';
+}
+
+// ---------- financials screen ----------
+const STMT_NAMES = {IS: "Income statement", BS: "Balance sheet", CF: "Cash flow statement", RATIOS: "Ratios"};
+function fmtFin(v, unit) {
+  if (v == null) return null;
+  if (unit === "USD/shares") return v.toFixed(2);
+  if (unit === "shares") return (v / 1e6).toLocaleString("en-US", {minimumFractionDigits: 1, maximumFractionDigits: 1});
+  if (unit === "%") return v.toFixed(1) + "%";
+  if (unit === "x") return v.toFixed(2) + "x";
+  return (v / 1e6).toLocaleString("en-US", {minimumFractionDigits: 1, maximumFractionDigits: 1});
+}
+function spark(vals) {
+  const v = vals.filter(x => x != null);
+  if (v.length < 2) return "";
+  const mx = Math.max(...v.map(Math.abs)) || 1, w = 74, h = 16, bw = w / vals.length;
+  return `<svg width="${w}" height="${h}">` + vals.map((x, i) => x == null ? "" :
+    `<rect x="${i * bw + 1}" y="${x >= 0 ? h / 2 - (x / mx) * h / 2 : h / 2}" width="${Math.max(bw - 2, 1)}"
+      height="${Math.max(Math.abs(x / mx) * h / 2, 1)}" fill="${x >= 0 ? "#4fb3ff" : "#ff4d40"}"/>`).join("") + "</svg>";
+}
+function drawFin() {
+  const t = S.ticker, f = D.fin[t];
+  if (!f) { $("finTables").innerHTML = '<p class="note">No SEC company facts for this security.</p>'; $("finNarr").innerHTML = ""; return; }
+  const tb = f[S.finPeriod], n = Math.min(S.finCount, tb.columns.length), cols = tb.columns.slice(-n);
+  const shown = S.finStmt === "All" ? ["IS", "BS", "CF", "RATIOS"] : [S.finStmt];
+  let h = `<table class="fs"><thead><tr><th>USD m · ${esc(t)} · ${S.finPeriod === "annual" ? "Annual" : "Quarterly"}</th>`
+        + cols.map(c => `<th title="period end ${esc(c.end)}">${esc(c.label)}<br><span class="note">${esc(c.end)}</span></th>`).join("")
+        + "<th>Trend</th></tr></thead><tbody>";
+  shown.forEach(st => {
+    const rows = st === "RATIOS" ? tb.ratios : tb[st];
+    h += `<tr class="sec"><td colspan="${n + 2}">${STMT_NAMES[st]}</td></tr>`;
+    if (st === "CF" && S.finPeriod === "quarterly") {
+      const cfo = rows.find(r => r.key === "cfo");
+      if (cfo) h += `<tr class="sub"><td>Period covered (year-to-date)</td>` + cfo.notes.slice(-n).map(x => `<td>${esc(x || "")}</td>`).join("") + "<td></td></tr>";
+    }
+    rows.forEach(r => {
+      const vals = r.values.slice(-n), notes = r.notes.slice(-n), srcs = (r.src || []).slice(-n);
+      if (vals.every(v => v == null)) return;
+      h += `<tr class="${r.computed ? "comp" : ""}"><td title="${esc(r.concept || "computed by Python")}">${esc(r.label)}</td>`;
+      vals.forEach((v, i) => {
+        const s = fmtFin(v, r.unit);
+        if (s == null) { h += `<td class="na" title="${esc(notes[i] || "not reported")}">${notes[i] && notes[i].startsWith("Q4") ? "Q4 → annual" : "—"}</td>`; return; }
+        const cell = srcs[i] ? `<a href="${esc(srcs[i])}" target="_blank" title="open filing">${s}</a>` : s;
+        h += `<td class="${v < 0 ? "neg" : ""}">${cell}</td>`;
+      });
+      h += `<td class="spark">${spark(vals)}</td></tr>`;
+    });
+  });
+  $("finTables").innerHTML = h + "</tbody></table>";
+
+  const e = D.fin_narr[t];
+  if (!e) { $("finNarr").innerHTML = '<p class="note">No analysis yet for the latest filing (run the dashboard with Claude).</p>';
+            $("finMeta").textContent = ""; return; }
+  const latest = f.latest || {};
+  $("finMeta").innerHTML = `Written for ${esc(latest.form || "")} filed ${esc(latest.filed || "")} · reused until the next filing`;
+  const order = [["overall", "Overall picture"], ["IS", "Income statement"], ["BS", "Balance sheet"], ["CF", "Cash flow statement"]];
+  $("finNarr").innerHTML = order.map(([k, title]) =>
+    `<section id="fn_${k}" class="${S.finStmt === k ? "hl" : ""}">` +
+    narrHTML([{title, sentences: (e.narr || {})[k] || [], missing: "No analysis for this part (removed by the check)."}],
+             c => (e.sources || {})[`${t}|${c}`]) + "</section>").join("");
+  if (S.finStmt !== "All" && $("fn_" + S.finStmt)) $("fn_" + S.finStmt).scrollIntoView({block: "nearest"});
+}
+function setView(v) {
+  S.view = v;
+  $("viewMarket").style.display = v === "market" ? "" : "none";
+  $("viewFin").style.display = v === "fin" ? "" : "none";
+  $("vMarket").className = v === "market" ? "on" : "";
+  $("vFin").className = v === "fin" ? "on" : "";
+  if (v === "fin") drawFin(); else { drawPrice(); drawMacro(); }
+}
+function finControls() {
+  periodButtons($("finPeriod"), ["quarterly", "annual"], "finPeriod", () => {
+    S.finCount = S.finPeriod === "annual" ? 5 : 8; fillCount(); drawFin(); });
+  periodButtons($("finStmt"), ["All", "IS", "BS", "CF", "RATIOS"], "finStmt", drawFin);
+  fillCount();
+}
+function fillCount() {
+  const opts = S.finPeriod === "annual" ? [3, 5, 6] : [4, 8, 12];
+  if (!opts.includes(S.finCount)) S.finCount = opts[1];
+  $("finCount").innerHTML = opts.map(o => `<option ${o === S.finCount ? "selected" : ""}>${o}</option>`).join("");
+}
+
+// ---------- reading windows ----------
+// They live on the page body, so they stay open when switching between MARKET and FINANCIALS.
+let popCount = 0, popZ = 1000;
+function openPop(title, html) {
+  const w = document.createElement("div");
+  const off = (popCount++ % 8) * 28;
+  w.className = "pop";
+  w.style.left = (90 + off) + "px";
+  w.style.top = (70 + off) + "px";
+  w.style.zIndex = ++popZ;
+  w.innerHTML = `<div class="ph"><b>${esc(title)}</b><span class="note">${esc(D.day)} · drag to move · corner to resize</span>
+                 <button class="x pout" title="Open as a real window" style="background:#2a2a2a">⧉ Window</button>
+                 <button class="x" title="Close" style="margin-left:2px">✕</button></div><div class="pb">${html}</div>`;
+  document.body.appendChild(w);
+  w.querySelector(".x:not(.pout)").onclick = () => w.remove();
+  w.querySelector(".pout").onclick = () => { w.remove(); openWindow(title, html); };
+  w.addEventListener("mousedown", () => { w.style.zIndex = ++popZ; });
+  const bar = w.querySelector(".ph");
+  bar.addEventListener("mousedown", e => {
+    if (e.target.closest("button")) return;
+    const dx = e.clientX - w.offsetLeft, dy = e.clientY - w.offsetTop;
+    const move = ev => {
+      w.style.left = Math.min(Math.max(0, ev.clientX - dx), innerWidth - 60) + "px";
+      w.style.top = Math.min(Math.max(0, ev.clientY - dy), innerHeight - 30) + "px";
+    };
+    const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+    e.preventDefault();
+  });
+}
+// A real browser window: can go to another monitor, be maximised or snapped (Win + arrow keys).
+const WIN_CSS = `
+  html, body { margin: 0; background: #000; color: #ffa028; font: 400 17px/1.65 Arial, "Helvetica Neue", sans-serif; }
+  header { position: sticky; top: 0; display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+           background: #000; border-bottom: 1px solid #ffa028; }
+  header b { color: #fff; font-size: 15px; }
+  header .d { color: #ff4d40; font-size: 11px; font-weight: 700; }
+  header .sp { flex: 1; }
+  header button { font: 700 13px Arial, sans-serif; background: #2a2a2a; color: #fff; border: 0; height: 24px;
+                  padding: 0 10px; cursor: pointer; }
+  header button:hover { background: #f7a51c; color: #000; }
+  main { padding: 16px 24px 40px; max-width: 1400px; }
+  h3 { color: #fff; font-size: 1em; margin: 14px 0 6px; }
+  p { color: #ffa028; margin: 0 0 14px; }
+  sup a { color: #5ec8ff; text-decoration: none; font-size: .65em; margin-left: 1px; }
+  section { border: 0 !important; background: none !important; padding: 0 !important; }`;
+function openWindow(title, html) {
+  const off = (popCount++ % 8) * 30;
+  const w = window.open("", "narr_" + Date.now() + "_" + popCount,
+    `popup=yes,width=820,height=620,left=${(window.screenX || 0) + 120 + off},top=${(window.screenY || 0) + 90 + off}`);
+  if (!w) { openPop(title, html); return; }            // pop-ups blocked: fall back to an in-page window
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+    <style>${WIN_CSS}</style></head><body>
+    <header><b>${esc(title)}</b><span class="d">SIMULATION · NOT INVESTMENT ADVICE · ${esc(D.day)}</span><span class="sp"></span>
+      <button onclick="z(-1)" title="Smaller text">A−</button><button onclick="z(1)" title="Bigger text">A+</button></header>
+    <main>${html}</main>
+    <script>let s = 17; function z(d) { s = Math.min(30, Math.max(12, s + d * 2)); document.body.style.fontSize = s + "px"; }<\/script>
+    </body></html>`);
+  w.document.close();
+  w.focus();
+}
+function popOnClick(el, title) {
+  el.title = "Click to open in its own window (move to another monitor, maximise, snap to half screen)";
+  el.addEventListener("click", e => {
+    if (e.target.closest("a")) return;                 // citation links still open their source
+    if (!el.textContent.trim()) return;
+    openWindow(title(), el.innerHTML);
+  });
+}
+
+// ---------- wiring ----------
+function init() {
+  // deep link: dashboard.html#ticker=UI&series=CPIAUCSL&mode=relative&stock=UI
+  new URLSearchParams(location.hash.slice(1)).forEach((v, k) => {
+    if (k === "ticker" && D.prices[v]) S.ticker = v;
+    if (k === "series" && D.series[v]) S.series = v;
+    if (k === "mode") S.mode = v === "relative" ? "relative" : "price";
+    if (k === "stock") S.stock = v;
+    if (k === "view") S.view = v === "fin" ? "fin" : "market";
+    if (k === "stmt") S.finStmt = v;
+    if (k === "fperiod") S.finPeriod = v === "annual" ? "annual" : "quarterly";
+  });
+  $("day").textContent = D.day;
+  const stale = D.freshness.filter(f => f.stale);
+  $("fresh").innerHTML = stale.length ? `DATA <b class="bad">● ${stale.length} STALE</b>` : `DATA <b class="ok">● FRESH</b>`;
+  $("fresh").title = D.freshness.map(f => `${f.connector}: ${f.finished_at || "never"} (${f.status || "-"})${f.stale ? " STALE" : ""}`).join("\n");
+
+  $("stockSel").innerHTML = '<option value="ALL">ALL</option>' + D.tickers.map(t => `<option>${esc(t)}</option>`).join("") +
+                            '<option value="MARKET">MARKET &amp; MACRO</option>';
+  $("priceTicker").innerHTML = D.tickers.map(t => `<option>${esc(t)}</option>`).join("");
+  $("finTicker").innerHTML = $("priceTicker").innerHTML;
+  let groups = {};
+  D.series_order.forEach(id => { const g = D.series[id].group; (groups[g] = groups[g] || []).push(id); });
+  $("seriesSel").innerHTML = Object.entries(groups).map(([g, ids]) => `<optgroup label="${esc(g)}">` +
+    ids.map(id => `<option value="${esc(id)}">${esc(D.series[id].label)}</option>`).join("") + "</optgroup>").join("");
+  $("seriesSel").value = S.series;
+  $("priceTicker").value = S.ticker;
+  $("finTicker").value = S.ticker;
+  $("stockSel").value = S.stock;
+  $("modeBtn").className = S.mode === "relative" ? "act on" : "act";
+
+  $("stockSel").onchange = e => {
+    S.stock = e.target.value;
+    if (D.tickers.includes(S.stock)) {
+      S.ticker = S.stock; $("priceTicker").value = S.ticker; $("finTicker").value = S.ticker;
+      S.view === "fin" ? drawFin() : drawPrice();
+    }
+    drawNews();
+  };
+  $("priceTicker").onchange = e => { S.ticker = e.target.value; $("finTicker").value = S.ticker; drawPrice(); };
+  $("finTicker").onchange = e => { S.ticker = e.target.value; $("priceTicker").value = S.ticker; drawFin(); };
+  $("finCount").onchange = e => { S.finCount = +e.target.value; drawFin(); };
+  $("vMarket").onclick = () => setView("market");
+  $("vFin").onclick = () => setView("fin");
+  finControls();
+  popOnClick($("priceNarr"), () => `${S.ticker} · last month (price + news)`);
+  popOnClick($("macroNarr"), () => `Fed & macro · ${D.series[S.series].label}`);
+  popOnClick($("finNarr"), () => `${S.ticker} · financial statement analysis (${(D.fin[S.ticker]?.latest || {}).form || ""})`);
+  $("seriesSel").onchange = e => { S.series = e.target.value; drawMacro(); };
+  $("typeBtn").onclick = () => {
+    S.ctype = S.ctype === "line" ? "candle" : "line";
+    $("typeBtn").textContent = S.ctype === "line" ? "Candles" : "Line";
+    if (S.mode !== "price") { S.mode = "price"; $("modeBtn").className = "act"; }
+    drawPrice();
+  };
+  $("modeBtn").onclick = () => {
+    S.mode = S.mode === "price" ? "relative" : "price";
+    $("modeBtn").className = S.mode === "relative" ? "act on" : "act";
+    drawPrice();
+  };
+  document.querySelectorAll("th[data-k]").forEach(th => th.onclick = () => {
+    S.sortDir = S.sortKey === th.dataset.k ? -S.sortDir : 1; S.sortKey = th.dataset.k; drawNews();
+  });
+  periodButtons($("pricePeriods"), ["1M", "3M", "6M", "YTD", "1Y", "All"], "period", drawPrice);
+  periodButtons($("macroPeriods"), ["3M", "6M", "1Y", "2Y", "All"], "mperiod", drawMacro);
+  drawTape(); drawNews(); setView(S.view);
+}
+init();
+</script>
+</body>
+</html>

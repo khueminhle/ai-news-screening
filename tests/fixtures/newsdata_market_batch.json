@@ -1,0 +1,196 @@
+{
+ "status": "success",
+ "totalResults": 307,
+ "results": [
+  {
+   "article_id": "34ee6e98efb077bd9ef6386ce3240a1a",
+   "link": "https://www.tomsguide.com/computing/laptops/apples-usd2-899-macbook-proled-hides-a-massive-unified-memory-bottleneck-why-i-think-power-users-should-abandon-macos-for-nvidia-rtx-spark-and-amd-strix-halo",
+   "title": "Apple’s $2,899 MacBook PROLED hides a massive unified memory bottleneck — why I think power users should abandon macOS for Nvidia RTX Spark and AMD Strix Halo",
+   "description": "Apple’s $2,899 MacBook PROLED pairs a stunning screen with a 24GB bottleneck. Here is why local AI users get more value from AMD Strix Halo and RTX Spark.",
+   "content": "ONLY AVAILABLE IN PAID PLANS",
+   "keywords": [
+    "computing",
+    "laptops",
+    "macbooks"
+   ],
+   "creator": [
+    "jason england"
+   ],
+   "symbol": [
+    "AAPL"
+   ],
+   "market_id": [
+    "AAPL-AT-AV"
+   ],
+   "language": "english",
+   "country": [
+    "united states of america"
+   ],
+   "datatype": "news",
+   "pubDate": "2026-11-09 07:30:00",
+   "pubDateTZ": "UTC",
+   "fetched_at": "2026-11-09 07:31:15",
+   "image_url": "https://cdn.mos.cms.futurecdn.net/whAZrcKkpsnUz9hCZqBBMj-1920-80.jpg",
+   "video_url": null,
+   "source_id": "tomsguide",
+   "source_name": "Tom's Guide",
+   "source_priority": 203,
+   "source_url": "https://www.tomsguide.com",
+   "source_icon": "https://i.newsdata.io/tomsguide.png",
+   "sentiment": "negative",
+   "sentiment_stats": {
+    "negative": 92.02,
+    "neutral": 6.09,
+    "positive": 1.89
+   },
+   "ai_tag": [
+    "e-commerce"
+   ],
+   "ai_org": "ONLY AVAILABLE IN CORPORATE PLANS",
+   "ai_summary": "ONLY AVAILABLE IN PAID PLANS",
+   "duplicate": false
+  },
+  {
+   "article_id": "e8c3cc47fd0cbfd9c7b80548f9a10581",
+   "link": "https://ng.investing.com/news/stock-market-news/oppenheimer-upgrades-amd-stock-rating-on-data-center-growth-93CH-2792510",
+   "title": "Oppenheimer upgrades AMD stock rating on data center growth",
+   "description": "Oppenheimer upgrades AMD stock rating on data center growth",
+   "content": "ONLY AVAILABLE IN PAID PLANS",
+   "keywords": null,
+   "creator": [
+    "investing.com"
+   ],
+   "symbol": [
+    "AMD"
+   ],
+   "market_id": [
+    "AMD-AT-AV"
+   ],
+   "language": "english",
+   "country": [
+    "nigeria"
+   ],
+   "datatype": "news",
+   "pubDate": "2026-11-09 07:00:14",
+   "pubDateTZ": "UTC",
+   "fetched_at": "2026-11-09 07:18:59",
+   "image_url": "https://content-media.investing.com/news/LisaSupresidentandCEOofAMD_800x533_L_1644852645.jpg",
+   "video_url": null,
+   "source_id": "investing_ng",
+   "source_name": "Investing Nigeria",
+   "source_priority": 923356,
+   "source_url": "https://ng.investing.com",
+   "source_icon": "https://i.newsdata.io/investing_ng.png",
+   "sentiment": "positive",
+   "sentiment_stats": {
+    "negative": 0.95,
+    "neutral": 29.99,
+    "positive": 69.06
+   },
+   "ai_tag": [
+    "financial markets",
+    "corporate news"
+   ],
+   "ai_org": "ONLY AVAILABLE IN CORPORATE PLANS",
+   "ai_summary": "ONLY AVAILABLE IN PAID PLANS",
+   "duplicate": true
+  },
+  {
+   "article_id": "aa049dff7e28f1ab3b71ed703f0e766e",
+   "link": "https://ph.investing.com/news/stock-market-news/oppenheimer-upgrades-amd-stock-rating-on-data-center-growth-93CH-2684790",
+   "title": "Oppenheimer upgrades AMD stock rating on data center growth",
+   "description": "Oppenheimer upgrades AMD stock rating on data center growth",
+   "content": "ONLY AVAILABLE IN PAID PLANS",
+   "keywords": null,
+   "creator": [
+    "investing.com"
+   ],
+   "symbol": [
+    "AMD"
+   ],
+   "market_id": [
+    "AMD-AT-AV"
+   ],
+   "language": "english",
+   "country": [
+    "philippines"
+   ],
+   "datatype": "news",
+   "pubDate": "2026-11-09 07:00:13",
+   "pubDateTZ": "UTC",
+   "fetched_at": "2026-11-09 07:18:59",
+   "image_url": "https://content-media.investing.com/news/LisaSupresidentandCEOofAMD_800x533_L_1644852645.jpg",
+   "video_url": null,
+   "source_id": "investing_ph",
+   "source_name": "Investing Philippines",
+   "source_priority": 906961,
+   "source_url": "https://ph.investing.com",
+   "source_icon": "https://i.newsdata.io/investing_ph.jpg",
+   "sentiment": "positive",
+   "sentiment_stats": {
+    "negative": 0.95,
+    "neutral": 29.99,
+    "positive": 69.06
+   },
+   "ai_tag": [
+    "financial markets",
+    "corporate news"
+   ],
+   "ai_org": "ONLY AVAILABLE IN CORPORATE PLANS",
+   "ai_summary": "ONLY AVAILABLE IN PAID PLANS",
+   "duplicate": false
+  },
+  {
+   "article_id": "6ec8e0245898ad1e95c70f6ebd176176",
+   "link": "https://www.fool.com/investing/2026/11/09/amd-vs-intel-which-is-the-better-ai-chip-stock-to/",
+   "title": "AMD vs. Intel: Which Is the Better AI Chip Stock to Own for the Next 3 Years Following the Semiconductor Crash?",
+   "description": "AMD and Intel stocks have both seen major pullbacks in the past month.",
+   "content": "ONLY AVAILABLE IN PAID PLANS",
+   "keywords": [
+    "intc",
+    "investing",
+    "amd",
+    "074ed2e8-26b6-4076-8642-9038c564c08e",
+    "technology and telecom"
+   ],
+   "creator": [
+    "geoffrey seiler"
+   ],
+   "symbol": [
+    "INTC"
+   ],
+   "market_id": [
+    "INTC-AT-AV"
+   ],
+   "language": "english",
+   "country": [
+    "united states of america"
+   ],
+   "datatype": "news",
+   "pubDate": "2026-11-09 05:00:00",
+   "pubDateTZ": "UTC",
+   "fetched_at": "2026-11-09 05:33:58",
+   "image_url": "https://g.foolcdn.com/editorial/images/892842/amdintc.png",
+   "video_url": null,
+   "source_id": "fool",
+   "source_name": "Fool",
+   "source_priority": 28963,
+   "source_url": "https://www.fool.com",
+   "source_icon": "https://i.newsdata.io/fool.png",
+   "sentiment": "neutral",
+   "sentiment_stats": {
+    "negative": 6.7,
+    "neutral": 92.15,
+    "positive": 1.15
+   },
+   "ai_tag": [
+    "financial markets",
+    "artificial intelligence"
+   ],
+   "ai_org": "ONLY AVAILABLE IN CORPORATE PLANS",
+   "ai_summary": "ONLY AVAILABLE IN PAID PLANS",
+   "duplicate": false
+  }
+ ],
+ "nextPage": "1794177900411886626"
+}

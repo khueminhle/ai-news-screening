@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local data and logs (the database is rebuilt from data/raw; GitHub rejects files over 100 MB)
+data/*
+!data/DATABASE_NOTES.md
+logs/
+*.db
+*.db-wal
+*.db-shm
+
+# Company code from another workflow: never in this repo
+claude oauth reference code/
