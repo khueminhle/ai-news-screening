@@ -1,0 +1,138 @@
+# Daily run: fetch -> classify -> digest -> dashboard -> email.
+# No schedule here: cron-job.org starts it every day through the GitHub API (workflow_dispatch).
+# It can also be started by hand: GitHub -> Actions -> Daily run -> Run workflow.
+name: Daily run
+
+on:
+  workflow_dispatch:
+    inputs:
+      day:
+        description: "Day to run for (YYYY-MM-DD). Empty = today (UTC date of the run)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry run: save the email instead of sending it"
+        type: boolean
+        default: false
+      resend:
+        description: "Send the digest again even if already sent for that day"
+        type: boolean
+        default: false
+
+concurrency:                 # never two runs at once (they share the data cache)
+  group: daily-run
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write             # needed to save the data cache
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      FINNHUB_API: ${{ secrets.FINNHUB_API }}
+      NEWSDATA_API: ${{ secrets.NEWSDATA_API }}
+      FRED_API: ${{ secrets.FRED_API }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      DIGEST_TO: ${{ secrets.DIGEST_TO }}
+      PYTHONIOENCODING: utf-8
+      LOG_LEVEL: WARNING
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+
+      - name: Install Claude Code CLI
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude --version
+
+      - name: Check that all secrets are set
+        run: |
+          missing=""
+          for v in SEC_USER_AGENT FINNHUB_API NEWSDATA_API FRED_API CLAUDE_CODE_OAUTH_TOKEN SMTP_USER SMTP_PASSWORD DIGEST_TO; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then echo "::error::Missing secrets:$missing"; exit 1; fi
+          echo "All secrets present."
+
+      - name: Run the offline tests
+        run: python -m pytest -q
+
+      # data/ (database, raw files, cached analyses) lives in the Actions cache between runs.
+      # Each run restores the newest copy and saves a new one at the end.
+      - name: Restore data from the previous run
+        id: data
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: data-${{ github.run_id }}
+          restore-keys: data-
+
+      - name: First run only - load 2 years of SEC filings
+        if: steps.data.outputs.cache-matched-key == ''
+        run: python -m pipeline.run_fetch --only sec --backfill-sec-years 2
+
+      - name: Daily run
+        env:
+          IN_DAY: ${{ inputs.day }}
+          IN_DRY: ${{ inputs.dry_run }}
+          IN_RESEND: ${{ inputs.resend }}
+        run: |
+          args=()
+          if [ -n "$IN_DAY" ]; then
+            [[ "$IN_DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "::error::day must be YYYY-MM-DD"; exit 1; }
+            args+=(--day "$IN_DAY")
+          fi
+          if [ "$IN_DRY" = "true" ]; then args+=(--dry-run); fi
+          if [ "$IN_RESEND" = "true" ]; then args+=(--resend); fi
+          python -m pipeline.run_daily "${args[@]}"
+
+      - name: Save data for the next run
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: data-${{ github.run_id }}
+
+      - name: Keep today's digest, dashboard and log (14 days)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-output-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            data/digests/
+            data/dashboards/
+            data/logs/
+            data/outbox/
+
+      - name: Weekly database backup (Sundays, kept 8 days)
+        if: always() && github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "$(date -u +%u)" = "7" ] && [ -f data/signals.db ]; then
+            python -c "import sqlite3; s=sqlite3.connect('data/signals.db'); d=sqlite3.connect('signals_backup.db'); s.backup(d)"
+            echo "BACKUP=yes" >> "$GITHUB_ENV"
+          fi
+
+      - name: Upload the weekly backup
+        if: always() && env.BACKUP == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signals-db-backup-${{ github.run_id }}
+          path: signals_backup.db
+          retention-days: 8
