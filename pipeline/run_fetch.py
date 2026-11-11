@@ -65,30 +65,46 @@ def _run_connector(conn, name: str, module: str, cls: str, day: date, kwargs: di
             "seconds": round(time.monotonic() - started, 1)}
 
 
-def tickers_needing_backfill(conn, tickers: list[str], day: date) -> list[str]:
-    """Watchlist tickers whose 2-year SEC history was never loaded.
+GAP_DAYS = 3                       # a ticker not covered for longer than this gets its filings refilled
 
-    A ticker counts as done once it is in sec_backfills. Tickers that already have filings older than ~10 months
-    (loaded before this list existed) are recorded as done instead of being loaded again.
+
+def tickers_needing_backfill(conn, tickers: list[str], day: date) -> dict[str, int]:
+    """{ticker: years to (re)load} for watchlist tickers whose SEC filings may be missing.
+
+    - never seen: 2 years (unless it already has filings older than ~10 months from before this table existed)
+    - last covered more than GAP_DAYS ago (removed and re-added, or runs were missed): 1 year if the gap is
+      under a year, else 2 years. Reloading never duplicates: filings already stored are skipped.
     """
-    cutoff = date.fromordinal(day.toordinal() - 300).isoformat()
-    need = []
+    need: dict[str, int] = {}
     for t in tickers:
-        if conn.execute("SELECT 1 FROM sec_backfills WHERE ticker = ?", (t,)).fetchone():
+        row = conn.execute("SELECT last_covered_day FROM sec_coverage WHERE ticker = ?", (t,)).fetchone()
+        if row is None:
+            cutoff = date.fromordinal(day.toordinal() - 300).isoformat()
+            old = conn.execute("SELECT COUNT(*) FROM filings WHERE (',' || tickers || ',') LIKE ? AND filed_date <= ?",
+                               (f"%,{t},%", cutoff)).fetchone()[0]
+            if old:
+                _set_coverage(conn, [t], day, history_years=AUTO_BACKFILL_YEARS, note="history loaded earlier")
+            else:
+                need[t] = AUTO_BACKFILL_YEARS
             continue
-        old = conn.execute("""SELECT COUNT(*) FROM filings WHERE (',' || tickers || ',') LIKE ? AND filed_date <= ?""",
-                           (f"%,{t},%", cutoff)).fetchone()[0]
-        if old:
-            mark_backfilled(conn, [t], "already loaded earlier")
-        else:
-            need.append(t)
+        last = row["last_covered_day"]
+        gap = (day - date.fromisoformat(last)).days if last else 10_000
+        if gap > GAP_DAYS:
+            need[t] = 1 if gap <= 365 else AUTO_BACKFILL_YEARS
     return need
 
 
-def mark_backfilled(conn, tickers: list[str], note: str) -> None:
+def _set_coverage(conn, tickers: list[str], day: date, *, history_years: int | None = None, note: str | None = None,
+                  covered: bool = True) -> None:
     from connectors.base import utc_now_z
-    conn.executemany("INSERT OR REPLACE INTO sec_backfills (ticker, years, done_at, note) VALUES (?, ?, ?, ?)",
-                     [(t, AUTO_BACKFILL_YEARS, utc_now_z(), note) for t in tickers])
+    for t in tickers:
+        conn.execute("INSERT OR IGNORE INTO sec_coverage (ticker) VALUES (?)", (t,))
+        if history_years is not None:
+            conn.execute("UPDATE sec_coverage SET history_loaded_at = ?, history_years = ?, note = ? WHERE ticker = ?",
+                         (utc_now_z(), history_years, note, t))
+        if covered:
+            conn.execute("UPDATE sec_coverage SET last_covered_day = ? WHERE ticker = ? "
+                         "AND (last_covered_day IS NULL OR last_covered_day < ?)", (day.isoformat(), t, day.isoformat()))
     conn.commit()
 
 
@@ -98,17 +114,19 @@ def run(day: date, only: list[str] | None = None, backfill_sec_years: int | None
     results = []
     watch = load_watchlist()
 
-    # New tickers on the watchlist get their SEC history loaded once, automatically (only those tickers).
+    # SEC history: new tickers get 2 years; tickers not covered for > GAP_DAYS get the gap refilled.
     if (not only or "sec" in only) and not backfill_sec_years:
-        new = tickers_needing_backfill(conn, watch, day)
-        if new:
-            log.info("SEC history for new watchlist tickers: %s", new)
+        need = tickers_needing_backfill(conn, watch, day)
+        for years in sorted(set(need.values())):
+            group = [t for t, y in need.items() if y == years]
+            log.info("SEC history (%s year(s)) for %s", years, group)
             r = _run_connector(conn, "sec_backfill", *CONNECTORS["sec"], day,
-                               {"tickers": new, "backfill_years": AUTO_BACKFILL_YEARS}, raw_sub="backfill")
-            r["counts"]["tickers"] = ",".join(new)
+                               {"tickers": group, "backfill_years": years}, raw_sub="backfill")
+            r["counts"]["tickers"] = ",".join(group)
+            r["counts"]["years"] = years
             results.append(r)
             if r["status"] != "failed":
-                mark_backfilled(conn, new, f"auto backfill {day.isoformat()}")
+                _set_coverage(conn, group, day, history_years=years, note=f"auto {years}y on {day.isoformat()}")
 
     for name, (module, cls) in CONNECTORS.items():
         if only and name not in only:
@@ -116,8 +134,10 @@ def run(day: date, only: list[str] | None = None, backfill_sec_years: int | None
         kwargs = {"backfill_years": backfill_sec_years} if name == "sec" and backfill_sec_years else {}
         r = _run_connector(conn, name, module, cls, day, kwargs)
         results.append(r)
-        if name == "sec" and backfill_sec_years and r["status"] != "failed":
-            mark_backfilled(conn, watch, f"manual backfill {day.isoformat()}")
+        if name == "sec" and r["status"] != "failed":
+            # this run covered every watchlist ticker for today
+            _set_coverage(conn, watch, day, history_years=backfill_sec_years,
+                          note=f"manual {backfill_sec_years}y on {day.isoformat()}" if backfill_sec_years else None)
 
     events = group_events(conn)
     results.append({"connector": "events", "status": "ok", "counts": events, "errors": [], "seconds": 0})

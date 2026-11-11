@@ -135,22 +135,31 @@ def test_ratings_history_saved_from_raw(conn, tmp_path):
     assert total == 41
 
 
-# ---------- automatic SEC history for new watchlist tickers ----------
+# ---------- automatic SEC history: new tickers and coverage gaps ----------
 
-def test_new_tickers_need_backfill_once(conn):
+def test_new_tickers_and_gaps_need_backfill(conn):
     from datetime import date
-    from pipeline.run_fetch import mark_backfilled, tickers_needing_backfill
+    from pipeline.run_fetch import _set_coverage, tickers_needing_backfill
     conn.execute("""INSERT INTO filings (accession_no, cik, tickers, form, filed_date, created_at)
                     VALUES ('old-1', 1, 'AAPL', '10-K', '2025-11-01', 'x')""")
     conn.commit()
     day = date(2026, 11, 12)
-    assert tickers_needing_backfill(conn, ["AAPL", "CI", "GRAB"], day) == ["CI", "GRAB"]   # AAPL has old filings
-    assert conn.execute("SELECT note FROM sec_backfills WHERE ticker='AAPL'").fetchone()[0] == "already loaded earlier"
-    mark_backfilled(conn, ["CI", "GRAB"], "auto")
-    assert tickers_needing_backfill(conn, ["AAPL", "CI", "GRAB"], day) == []      # GRAB has no filings: still done
+    assert tickers_needing_backfill(conn, ["AAPL", "CI", "GRAB"], day) == {"CI": 2, "GRAB": 2}   # AAPL loaded earlier
+    _set_coverage(conn, ["CI", "GRAB"], day, history_years=2, note="auto")
+    assert tickers_needing_backfill(conn, ["AAPL", "CI", "GRAB"], date(2026, 11, 13)) == {}       # covered yesterday
+    # runs missed for a week -> the gap is refilled (1 year is enough)
+    assert tickers_needing_backfill(conn, ["CI"], date(2026, 11, 20)) == {"CI": 1}
 
 
-def test_run_backfills_only_new_tickers(tmp_path, monkeypatch):
+def test_removed_for_a_year_then_added_back_is_refilled(conn):
+    from datetime import date
+    from pipeline.run_fetch import _set_coverage, tickers_needing_backfill
+    _set_coverage(conn, ["CI"], date(2026, 11, 12), history_years=2, note="auto")      # covered 2024-2026
+    # removed from the watchlist: its last covered day stops moving; re-added in 2028
+    assert tickers_needing_backfill(conn, ["CI"], date(2028, 1, 15)) == {"CI": 2}       # 2027 refilled
+
+
+def test_run_backfills_only_tickers_that_need_it(tmp_path, monkeypatch):
     from datetime import date
     from connectors import base
     from pipeline import run_fetch
@@ -166,5 +175,5 @@ def test_run_backfills_only_new_tickers(tmp_path, monkeypatch):
     run_fetch.run(date(2026, 11, 12), only=["sec"])
     assert calls[0] == ("sec_backfill", {"tickers": ["AAPL", "CI"], "backfill_years": 2}) and calls[1][0] == "sec"
     calls.clear()
-    run_fetch.run(date(2026, 11, 13), only=["sec"])                  # next day: nothing new
+    run_fetch.run(date(2026, 11, 13), only=["sec"])                   # next day: covered, nothing extra
     assert [c[0] for c in calls] == ["sec"]

@@ -347,12 +347,14 @@ CREATE TABLE IF NOT EXISTS daily_runs (
     log_path     TEXT
 );
 
--- Tickers whose 2-year SEC history has been loaded. A watchlist ticker missing here gets it on the next run.
-CREATE TABLE IF NOT EXISTS sec_backfills (
-    ticker   TEXT PRIMARY KEY,
-    years    INTEGER,
-    done_at  TEXT NOT NULL,
-    note     TEXT                             -- auto backfill <day> | manual backfill <day> | already loaded earlier
+-- SEC coverage per ticker: when its filing history was (re)loaded and the last day a successful daily SEC fetch
+-- covered it. New ticker -> 2 years loaded; a gap of more than 3 days (removed and re-added, or missed runs) is refilled.
+CREATE TABLE IF NOT EXISTS sec_coverage (
+    ticker             TEXT PRIMARY KEY,
+    history_loaded_at  TEXT,                  -- last (re)load of the history
+    history_years      INTEGER,
+    last_covered_day   TEXT,                  -- last run day a successful daily SEC fetch included this ticker
+    note               TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_deliveries_day    ON deliveries (day, kind, status);
