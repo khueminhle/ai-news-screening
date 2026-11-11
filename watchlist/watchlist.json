@@ -1,14 +1,14 @@
 {
-  "description": "Simulation watchlist. Every connector reads this file. Add or remove tickers freely; there is no limit. Each entry is either a ticker string, e.g. \"MSFT\", or an object with an optional name used for news searches, e.g. {\"ticker\": \"NET\", \"name\": \"Cloudflare\"}. Without a name, the company name is taken from the SEC list.",
+  "description": "Simulation watchlist. Every connector reads this file. Add or remove tickers freely; there is no limit. Each entry is either a ticker string, e.g. \"MSFT\", or an object with an optional name, e.g. {\"ticker\": \"NET\", \"name\": \"Cloudflare\"}, and an optional news_query (the words the RSS news search uses instead of the name). Without a name, the company name is taken from the SEC list.",
   "tickers": [
     {"ticker": "AAPL", "name": "Apple"},
     {"ticker": "CI", "name": "Cigna"},
     {"ticker": "FN", "name": "Fabrinet"},
-    {"ticker": "GOOG", "name": "Alphabet"},
-    {"ticker": "GRAB", "name": "Grab Holdings"},
-    {"ticker": "META", "name": "Meta"},
+    {"ticker": "GOOG", "name": "Alphabet", "news_query": "\"Alphabet\" OR \"Google\""},
+    {"ticker": "GRAB", "name": "Grab Holdings", "news_query": "\"Grab Holdings\""},
+    {"ticker": "META", "name": "Meta", "news_query": "\"Meta Platforms\" OR \"Meta\""},
     {"ticker": "NVDA", "name": "Nvidia"},
-    {"ticker": "SPY", "name": "SPDR S&P 500"},
+    {"ticker": "SPY", "name": "SPDR S&P 500", "news_query": "\"S&P 500\""},
     {"ticker": "WFC", "name": "Wells Fargo"}
   ]
 }

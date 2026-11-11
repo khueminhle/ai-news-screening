@@ -7,8 +7,10 @@
 What happens:
   1. Python picks the items: relevant + high/medium importance (Claude's M5 labels), new since the last digest
      (first digest: last 7 days), published within 7 days, one per story (copies shown as "also reported by").
-  2. Python builds a fact sheet per company with news (+ one for MARKET), each fact with an ID, from signals.db:
-        N = news, S = SEC filing, F = Fed release, P = prices, R = analyst counts, E = next earnings, M = FRED
+  2. News (RSS headlines) is NOT summarised: it becomes a headline list per section (importance, outlet, link).
+     Python builds a fact sheet per company with new filings (+ one for MARKET if there are Fed releases),
+     each fact with an ID, from signals.db:
+        S = SEC filing, F = Fed release, P = prices, R = analyst counts, E = next earnings, M = FRED
      Python works out every % change, so Claude never does arithmetic.
         -> data/digests/<day>/<SECTION>_input.json
   3. Claude (no tools) writes bullets from that sheet only: {"text": ..., "cites": [...]}.
@@ -49,6 +51,7 @@ MAX_AGE = timedelta(days=7)              # items published more than 7 days befo
 FRESH_LIMIT = timedelta(hours=24)        # a source not updated for longer is flagged
 NEWS_CHARS = 800
 UPCOMING_DAYS = 14
+MAX_HEADLINES = 12                       # per section in the digest / email (high first); the dashboard shows all
 DISCLAIMER = "**SIMULATION, NOT INVESTMENT ADVICE.**"
 MARKET_SERIES = ("DFEDTARU", "DFF", "DGS2", "DGS10", "T10Y2Y", "VIXCLS", "BAMLH0A0HYM2", "DCOILWTICO",
                  "CPIAUCSL", "UNRATE", "PAYEMS")
@@ -226,15 +229,33 @@ def macro_fact(m: dict) -> dict:
                         "url": f"https://fred.stlouisfed.org/series/{m['series_id']}"}}
 
 
+def is_news(it: dict) -> bool:
+    return it["source"] not in ("sec_edgar", "federal_reserve")
+
+
+def headline(it: dict) -> dict:
+    return {"title": it["title"], "publisher": it["publisher"] or it["source"], "url": it["url"],
+            "published_at": it["published_at"], "importance": it["importance"], "also": it["also_reported_by"]}
+
+
 def build_sheets(conn, day: date, items: list[dict], watch: list[dict]) -> tuple[dict, dict]:
-    """Return ({section: [facts]}, data for the Python tables)."""
+    """Return ({section: [facts]}, data for the Python tables incl. tables["headlines"] = {section: [headline]}).
+
+    News items only go into the headline lists; filings and Fed releases go into Claude's fact sheets."""
     by_section: dict[str, list[dict]] = defaultdict(list)
+    headlines: dict[str, list[dict]] = defaultdict(list)
+    watch_set = {w["ticker"] for w in watch}
     for it in items:
         for key in (it["label_tickers"] or [MARKET]):
-            by_section[key].append(item_fact(conn, it))
+            if is_news(it):
+                if key == MARKET or key in watch_set:
+                    headlines[key].append(headline(it))
+            else:
+                by_section[key].append(item_fact(conn, it))
 
     names = {w["ticker"]: w.get("name") or w["ticker"] for w in watch}
-    tables = {"prices": {}, "ratings": {}, "earnings": {}, "macro": macro_rows(conn, day), "benchmarks": {}}
+    tables = {"prices": {}, "ratings": {}, "earnings": {}, "macro": macro_rows(conn, day), "benchmarks": {},
+              "headlines": dict(headlines)}
     for t in names:
         tables["prices"][t] = price_stats(conn, t, day)
         tables["ratings"][t] = ratings(conn, t)
@@ -397,6 +418,20 @@ def render(day: date, built_at: str, since: str | None, watch: list[dict], sheet
             out.append(f"- *Bullets for this section are unavailable: {results[section]['error'][:150]}*")
         return out
 
+    def headline_lines(section: str) -> list[str]:
+        rows = tables.get("headlines", {}).get(section, [])
+        if not rows:
+            return []
+        out = ["**Headlines**", ""]
+        for h in rows[:MAX_HEADLINES]:
+            when = (h["published_at"] or "")[:16].replace("T", " ")
+            title = f"[{h['title']}]({h['url']})" if h["url"] else h["title"]
+            also = f" · also {', '.join(h['also'])}" if h["also"] else ""
+            out.append(f"- **{(h['importance'] or '').upper()}** {title} — {h['publisher']}, {when} UTC{also}")
+        if len(rows) > MAX_HEADLINES:
+            out.append(f"- *{len(rows) - MAX_HEADLINES} more on the dashboard*")
+        return out + [""]
+
     L = [f"# Daily digest: {day.isoformat()}", "",
          f"{DISCLAIMER} Built {built_at} (UTC) from `signals.db`. Covers items "
          + (f"first seen after {since}" if since else "from the last 7 days (first digest)")
@@ -406,6 +441,7 @@ def render(day: date, built_at: str, since: str | None, watch: list[dict], sheet
     L += ["## Market and macro", ""]
     if MARKET in results:
         L += bullet_lines(MARKET) + [""]
+    L += headline_lines(MARKET)
     L += ["| Indicator | Latest | Date | Previous |", "|---|---|---|---|"]
     for sym, p in tables["benchmarks"].items():
         if p:
@@ -437,8 +473,11 @@ def render(day: date, built_at: str, since: str | None, watch: list[dict], sheet
     L += ["## Company news", ""]
     quiet = []
     for t in names:
-        if t in results:
-            L += [f"### {t}: {names[t]}", ""] + bullet_lines(t) + [""]
+        if t in results or tables.get("headlines", {}).get(t):
+            L += [f"### {t}: {names[t]}", ""]
+            if t in results:
+                L += bullet_lines(t) + [""]
+            L += headline_lines(t)
         else:
             quiet.append(t)
     if quiet:
@@ -469,7 +508,7 @@ def render(day: date, built_at: str, since: str | None, watch: list[dict], sheet
     L += ["---", f"{DISCLAIMER} Generated automatically for a personal research project."]
 
     data = {"day": day.isoformat(), "built_at": built_at, "covers_since": since,
-            "sections": {s: results[s] for s in results},
+            "sections": {s: results[s] for s in results}, "headlines": tables.get("headlines", {}),
             "sources": {n: {"id": fid, **all_facts[fid]["_source"]} for fid, n in refs.items()}}
     return "\n".join(L) + "\n", data
 
@@ -477,8 +516,11 @@ def render(day: date, built_at: str, since: str | None, watch: list[dict], sheet
 def freshness_rows(conn, built_at: str) -> list[dict]:
     now = datetime.fromisoformat(built_at.replace("Z", "+00:00"))
     out = []
+    from pipeline.run_fetch import CONNECTORS              # only sources still in use (retired ones never go stale)
     for r in conn.execute("""SELECT connector, MAX(finished_at) finished_at FROM fetch_runs
                              WHERE status IN ('ok', 'degraded') GROUP BY connector ORDER BY connector"""):
+        if r["connector"] not in CONNECTORS:
+            continue
         last = conn.execute("SELECT status FROM fetch_runs WHERE connector = ? ORDER BY id DESC LIMIT 1",
                             (r["connector"],)).fetchone()
         age = now - datetime.fromisoformat(r["finished_at"].replace("Z", "+00:00")) if r["finished_at"] else None
@@ -524,6 +566,7 @@ def run(day: date, *, dry_run: bool = False) -> dict:
 
     sheets, tables = build_sheets(conn, day, items, watch)
     summary["sections"] = list(sheets)
+    summary["headlines"] = sum(len(v) for v in tables["headlines"].values())
     if dry_run:
         for s in sheets:
             (out_dir / f"{s}_input.json").write_text(json.dumps(public_sheet(s, sheets[s], names), ensure_ascii=False,

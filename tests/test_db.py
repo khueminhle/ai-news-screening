@@ -38,7 +38,7 @@ def test_rerun_creates_no_duplicates(conn):
 
 
 def test_placeholders_and_empty_strings_become_null(conn):
-    save_items(conn, [news(source="newsdata", description="ONLY AVAILABLE IN PAID PLANS"),
+    save_items(conn, [news(source="news_rss", description="ONLY AVAILABLE IN PAID PLANS"),
                       news(source="finnhub", sid="9", summary="")])
     assert [r[0] for r in conn.execute("SELECT summary FROM items")] == [None, None]
 
@@ -52,11 +52,11 @@ def test_times_are_stored_in_one_utc_format(conn):
 def test_events_same_ticker_same_headline_within_48h(conn):
     save_items(conn, [
         news(source="finnhub", sid="1", title="Ubiquiti Soars 15% on Record Quarter"),
-        news(source="newsdata", sid="2", title="Ubiquiti soars 15% on record quarter - Yahoo Finance",
+        news(source="news_rss", sid="2", title="Ubiquiti soars 15% on record quarter - Yahoo Finance",
              published="2026-11-07T10:00:00Z"),                                  # same story, 22h later
-        news(source="newsdata", sid="3", title="Ubiquiti Soars 15% on Record Quarter",
+        news(source="news_rss", sid="3", title="Ubiquiti Soars 15% on Record Quarter",
              published="2026-11-10T12:00:00Z"),                                  # 4 days later: new event
-        news(source="newsdata", sid="4", title="Ubiquiti Soars 15% on Record Quarter", tickers=("AAPL",)),
+        news(source="news_rss", sid="4", title="Ubiquiti Soars 15% on Record Quarter", tickers=("AAPL",)),
     ])
     group_events(conn)
     ev = dict(conn.execute("SELECT source_id, event_id FROM items").fetchall())

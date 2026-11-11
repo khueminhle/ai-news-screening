@@ -1,6 +1,7 @@
 """Milestone 6: the checks, and the digest end to end with a fake Claude."""
 import json
 import sys
+from collections import Counter
 from datetime import date
 from pathlib import Path
 
@@ -76,10 +77,16 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(run_digest, "DIGEST_DIR", tmp_path / "digests")
     conn = db.connect(path)
 
-    def add(sid, title, summary="Sales $1.026B", ticker="UI", importance="high", relevant=1, near=None):
-        db.save_items(conn, [Item(source="finnhub", source_id=sid, tickers=[ticker], title=title, url="https://x/" + sid,
-                                  published_at="2026-11-09T12:00:00Z", item_type="news",
-                                  extra={"summary": summary, "publisher": "Pub" + sid})])
+    def add(sid, title, summary="Sales $1.026B", ticker="UI", importance="high", relevant=1, near=None, kind="filing"):
+        """kind="filing": an 8-K (goes to Claude's fact sheet); kind="news": an RSS headline (headline list only)."""
+        if kind == "news":
+            db.save_items(conn, [Item(source="news_rss", source_id=sid, tickers=[ticker], title=title,
+                                      url="https://x/" + sid, published_at="2026-11-09T12:00:00Z", item_type="news",
+                                      extra={"publisher": "Pub" + sid})])
+        else:
+            db._upsert_item(conn, Item(source="sec_edgar", source_id=sid, tickers=[ticker], title=title,
+                                       url="https://x/" + sid, published_at="2026-11-09T12:00:00Z", item_type="8-K",
+                                       extra={"company_name": ticker}), Counter(), summary=summary, publisher="Pub" + sid)
         item_id = conn.execute("SELECT id FROM items WHERE source_id = ?", (sid,)).fetchone()[0]
         conn.execute("""INSERT INTO item_labels (item_id, prompt_version, model, relevant, tickers, event_type,
                         importance, sentiment, near_duplicate_of, one_line, labelled_at)
@@ -134,3 +141,21 @@ def test_next_digest_covers_only_new_items(setup):
     conn.commit()
     assert run_digest.run(date(2026, 11, 11))["items"] == 1
     assert conn.execute("SELECT COUNT(*) FROM digests").fetchone()[0] == 2   # re-building a day replaces it
+
+
+def test_news_is_a_headline_list_not_claude_bullets(setup):
+    conn, add = setup
+    add("1", "Ubiquiti results")                                       # filing -> Claude bullet
+    add("2", "Ubiquiti wins big contract", kind="news", importance="high")
+    add("3", "Ubiquiti product review", kind="news", importance="medium", ticker="AAPL")
+    add("4", "Ubiquiti listicle", kind="news", importance="low")
+    s = run_digest.run(date(2026, 11, 10))
+    assert s["headlines"] == 2 and s["kept"] == 1
+    md = Path(s["path"]).read_text(encoding="utf-8")
+    assert "**HIGH** [Ubiquiti wins big contract](https://x/2) — Pub2" in md
+    assert "### AAPL" in md and "**MEDIUM** [Ubiquiti product review]" in md     # a section with headlines only
+    assert "Ubiquiti listicle" not in md
+    folder = Path(s["path"]).parent
+    assert not (folder / "AAPL_input.json").exists()                          # no Claude call for headline-only
+    facts = json.loads((folder / "UI_input.json").read_text(encoding="utf-8"))["facts"]
+    assert not any(f["id"].startswith("N") for f in facts)                    # news never reaches Claude's sheet

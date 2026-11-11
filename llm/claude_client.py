@@ -1,6 +1,7 @@
 """Call Claude through the Claude Code CLI (`claude --print`), signed in with your subscription.
 
-How one call works (same idea as the reference project, but Claude gets no tools):
+How one call works (same idea as the reference project; Claude gets no tools, except the weekly
+DEEP DIVE, which may use WebSearch and WebFetch only):
   1. Python writes the prompt to a temp .txt file (too long for a command line).
   2. `claude --print ... < prompt.txt` : the file is fed in as the prompt.
   3. Claude's answer comes back through the pipe (stdout) into a Python string.
@@ -74,14 +75,21 @@ def child_env() -> dict[str, str]:
     return env
 
 
-def build_args(model: str, effort: str | None) -> list[str]:
+WEB_TOOLS = "WebSearch,WebFetch"       # the only tools ever allowed (DEEP DIVE research); never Bash / files / MCP
+
+
+def build_args(model: str, effort: str | None, tools: str = "", system_prompt: str | None = None) -> list[str]:
+    if tools and tools != WEB_TOOLS:
+        raise ValueError(f"only {WEB_TOOLS!r} may be enabled, got {tools!r}")
     args = ["--print", "--model", model,
-            "--tools", "",                     # no tools at all: Claude only sees the prompt
-            "--system-prompt", SYSTEM_PROMPT,  # replaces Claude Code's long default prompt (fewer tokens)
+            "--tools", tools,                  # "" = no tools at all: Claude only sees the prompt
+            "--system-prompt", system_prompt or SYSTEM_PROMPT,  # replaces Claude Code's long default prompt
             "--output-format", "json",         # reply + token usage in one JSON envelope
             "--strict-mcp-config",             # no MCP servers / connectors
             "--disable-slash-commands",
             "--no-session-persistence"]
+    if tools:
+        args += ["--allowedTools", tools]      # pre-approved: --print cannot ask for permission
     if effort:
         args += ["--effort", effort]
     return args
@@ -109,7 +117,7 @@ def parse_envelope(stdout: str) -> tuple[str, dict, str | None]:
 
 
 async def run_claude(prompt: str, *, model: str = MODEL, effort: str | None = EFFORT,
-                     timeout: float | None = TIMEOUT) -> ClaudeResult:
+                     timeout: float | None = TIMEOUT, tools: str = "", system_prompt: str | None = None) -> ClaudeResult:
     EMPTY_CWD.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tf:
         tf.write(prompt)
@@ -119,7 +127,7 @@ async def run_claude(prompt: str, *, model: str = MODEL, effort: str | None = EF
     try:
         with open(prompt_file, "rb") as stdin:          # same as `< prompt.txt`
             proc = await asyncio.create_subprocess_exec(
-                *claude_command(), *build_args(model, effort),
+                *claude_command(), *build_args(model, effort, tools, system_prompt),
                 stdin=stdin, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 cwd=EMPTY_CWD, env=child_env(),
                 start_new_session=sys.platform != "win32")

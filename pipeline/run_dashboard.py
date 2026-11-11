@@ -29,6 +29,7 @@ if __package__ in (None, ""):
 from connectors.base import PROJECT_ROOT, load_watchlist_entries, utc_now_z
 from llm import claude_client
 from llm.schemas import extract_json
+from pipeline import deep_dive as DD
 from pipeline import fundamentals as F
 from pipeline import run_digest
 from pipeline.run_digest import (BENCHMARKS, check_bullet, earnings_fact, freshness_rows, item_fact, next_earnings,
@@ -329,12 +330,21 @@ def _log(conn, day: str, name: str, model: str, result, n: int, in_path: Path, o
          str(out_path), error, json.dumps(result.usage) if result.usage else None, utc_now_z()))
 
 
-async def _call_all(calls: list[tuple[str, str]]):
-    return await asyncio.gather(*(claude_client.run_claude(p, model=m) for p, m in calls))
+async def _call_all(calls: list[tuple[str, dict]]):
+    """(prompt, job) pairs; at most MAX_PARALLEL Claude processes at once. A job may add call options
+    ("call": tools / effort / timeout / system_prompt, used by DEEP DIVE)."""
+    sem = asyncio.Semaphore(claude_client.MAX_PARALLEL)
+
+    async def one(p: str, j: dict):
+        async with sem:
+            return await claude_client.run_claude(p, model=j["model"], **j.get("call", {}))
+    return await asyncio.gather(*(one(p, j) for p, j in calls))
 
 
 def narrate(conn, day: date, jobs: list[dict], out_dir: Path) -> dict:
-    """jobs: {name, model, rules, sheet, facts_by_id, parts}. Returns {name: {"kept": [...], "removed": [...], "error"}}."""
+    """jobs: {name, model, rules, sheet, facts_by_id, parts} + optional "check" (default check_sentence), "split"
+    (default True: split packed paragraphs) and "call" (extra run_claude options).
+    Returns {name: {"kept": [...], "removed": [...], "error"}}."""
     res = {j["name"]: {"kept": [], "removed": [], "error": None} for j in jobs}
     for j in jobs:
         (out_dir / f"{j['name']}_input.json").write_text(json.dumps(j["sheet"], ensure_ascii=False, indent=1),
@@ -347,7 +357,7 @@ def narrate(conn, day: date, jobs: list[dict], out_dir: Path) -> dict:
             break
         replies = asyncio.run(_call_all([(prompt_for(j["rules"], j["sheet"],
                                                      None if attempt == 1 or j["name"] in again else pending[j["name"]]),
-                                          j["model"]) for j in todo]))
+                                          j) for j in todo]))
         for j, r in zip(todo, replies):
             name, suffix = j["name"], "" if attempt == 1 else "_retry"
             sentences, error = read_sentences(r)
@@ -355,8 +365,8 @@ def narrate(conn, day: date, jobs: list[dict], out_dir: Path) -> dict:
             out_path.write_text(json.dumps({"sentences": sentences} if not error else {"error": error, "raw": r.text},
                                            ensure_ascii=False, indent=1), encoding="utf-8")
             failed, fixed = [], set()
-            for raw in split_long(sentences):
-                s, reason = check_sentence(raw, j["facts_by_id"], j["parts"])
+            for raw in (split_long(sentences) if j.get("split", True) else sentences):
+                s, reason = j.get("check", check_sentence)(raw, j["facts_by_id"], j["parts"])
                 if s is not None and reason is None:
                     res[name]["kept"].append({**s, "attempt": attempt})
                     if s.get("fixes") is not None:
@@ -398,12 +408,18 @@ def news_rows(digest: dict, importance: dict[str, str]) -> list[dict]:
                          "importance": "high" if "high" in levels else ("medium" if "medium" in levels else None),
                          "links": [{"label": s.get("publisher") or s["label"].split(":")[0], "url": s["url"]}
                                    for s in srcs if s.get("url")]})
+    for section, heads in digest.get("headlines", {}).items():      # RSS headlines: no summary, link only
+        for h in heads:
+            rows.append({"ticker": section, "date": (h.get("published_at") or "")[:10], "title": h["title"],
+                         "summary": "", "importance": h.get("importance"),
+                         "links": [{"label": h.get("publisher") or "link", "url": h["url"]}] if h.get("url") else []})
     return rows
 
 
 # ---------- build ----------
 
-def run(day: date, *, use_claude: bool = True, refresh_fin: set[str] | None = None) -> dict:
+def run(day: date, *, use_claude: bool = True, refresh_fin: set[str] | None = None,
+        refresh_deep: set[str] | None = None) -> dict:
     conn = connect()
     watch = load_watchlist_entries()
     tickers = [w["ticker"] for w in watch]
@@ -461,6 +477,16 @@ def run(day: date, *, use_claude: bool = True, refresh_fin: set[str] | None = No
                              "rules": (PROMPTS / "dashboard_fin.md").read_text("utf-8").format(),
                              "sheet": public(f"{t} ({names[t]}) financial statements", facts),
                              "facts_by_id": {x["id"]: x for x in facts}, "parts": {"overall", "IS", "BS", "CF"}})
+    # DEEP DIVE: weekly web research per company (see pipeline/deep_dive.py); latest saved one shown otherwise
+    deep, deep_jobs = {}, []
+    for t in fin:
+        c = DD.latest_cache(t)
+        if c:
+            deep[t] = c[1]
+        if use_claude and DD.needs_refresh(t, day, force=t in (refresh_deep or set())):
+            facts = DD.deep_facts(conn, t, fin[t], day, run_digest.CLASSIFY_VERSION)
+            deep_jobs.append(DD.job(t, names[t], facts, day, public(f"{t} ({names[t]}) deep dive", facts)))
+
     if use_claude:
         s_sheets = stock_sheets(conn, day, tickers, prices, bench)
         m_facts = macro_sheet(conn, day, infos, curve_f)
@@ -471,12 +497,21 @@ def run(day: date, *, use_claude: bool = True, refresh_fin: set[str] | None = No
                      "rules": (PROMPTS / "dashboard_macro.md").read_text("utf-8").format(),
                      "sheet": public("Fed and macro", m_facts), "facts_by_id": {x["id"]: x for x in m_facts},
                      "parts": {"big_picture"} | {f["id"][2:] for f in m_facts if f["id"].startswith("U:")}})
-        jobs += fin_jobs
+        jobs += fin_jobs + deep_jobs
         for j in jobs:
             sources.update({fid: f["_source"] for fid, f in j["facts_by_id"].items()
-                            if not j["name"].startswith("FIN_")})
+                            if not j["name"].startswith(("FIN_", "DEEP_"))})
         results = narrate(conn, day, jobs, out_dir)
         for name, r in results.items():
+            if name.startswith("DEEP_"):           # saved weekly, kept apart from the daily narratives
+                t = name[5:]
+                entry = DD.entry_from(t, r, next(j for j in deep_jobs if j["name"] == name), day)
+                if r["error"] or not r["kept"]:
+                    status = "partial"             # keep showing last week's deep dive
+                else:
+                    DD.save_cache(t, day, entry)
+                    deep[t] = entry
+                continue
             if name.startswith("FIN_"):            # cached per filing, kept apart from the daily narratives
                 t = name[4:]
                 narr = {}
@@ -506,7 +541,7 @@ def run(day: date, *, use_claude: bool = True, refresh_fin: set[str] | None = No
     data = {"day": day.isoformat(), "built_at": utc_now_z(), "tickers": tickers, "names": names,
             "prices": prices, "benchmarks": bench, "series": series, "series_order": list(series),
             "news": news, "narratives": narratives, "sources": sources, "removed": removed,
-            "fin": fin, "fin_narr": fin_narr,
+            "fin": fin, "fin_narr": fin_narr, "deep": deep,
             "freshness": freshness_rows(conn, utc_now_z())}
     from plotly.offline import get_plotlyjs
     html = (TEMPLATE.read_text(encoding="utf-8")
@@ -529,7 +564,7 @@ def run(day: date, *, use_claude: bool = True, refresh_fin: set[str] | None = No
     conn.commit()
     conn.close()
     return {"status": status, "path": str(path), "news": len(news), "kept": kept, "removed": removed,
-            "fin_written": len(fin_jobs), "fin_cached": len(fin_narr) - len(fin_jobs),
+            "fin_written": len(fin_jobs), "fin_cached": len(fin_narr) - len(fin_jobs), "deep_written": len(deep_jobs),
             "size_mb": round(path.stat().st_size / 1e6, 1)}
 
 
@@ -542,17 +577,21 @@ def main() -> None:
     parser.add_argument("--day", default="today")
     parser.add_argument("--refresh-fin", nargs="*", metavar="TICKER",
                         help="Rewrite the financial analysis even if one exists for the latest filing (no tickers = all)")
+    parser.add_argument("--refresh-deep", nargs="*", metavar="TICKER",
+                        help="Run the DEEP DIVE web research now even if this week's exists (no tickers = all)")
     parser.add_argument("--no-claude", action="store_true",
                         help="No Claude calls: rebuild charts / news table, reuse today's saved narratives if any")
     args = parser.parse_args()
     day = date.today() if args.day == "today" else date.fromisoformat(args.day)
     print(f"Dashboard {day} ({PROMPT_VERSION}; stocks {STOCK_MODEL}, macro {MACRO_MODEL})", flush=True)
     refresh = None if args.refresh_fin is None else (set(args.refresh_fin) or set(load_watchlist_entries_tickers()))
-    s = run(day, use_claude=not args.no_claude, refresh_fin=refresh)
+    deep = None if args.refresh_deep is None else (set(args.refresh_deep) or set(load_watchlist_entries_tickers()))
+    s = run(day, use_claude=not args.no_claude, refresh_fin=refresh, refresh_deep=deep)
     print(f"  Status: {s['status']}  news rows: {s['news']}  sentences kept: {s['kept']}  removed: {len(s['removed'])}")
     for r in s["removed"]:
         print(f"    removed [{r['section']}/{r['part']}] {r['text'][:90]} -- {r['problem'][:120]}")
     print(f"  Financial analyses: {s['fin_written']} written (new filing), {s['fin_cached']} reused from cache")
+    print(f"  Deep dives researched: {s['deep_written']} (weekly, Mondays; others reuse the latest)")
     print(f"  Dashboard: {s['path']}  ({s['size_mb']} MB)")
 
 

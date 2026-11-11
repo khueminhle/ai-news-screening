@@ -114,6 +114,17 @@
   .finnarr section.hl { border-left-color: var(--field); background: #0b0b0b; }
   .finnarr h3 { font-size: 13px; margin: 4px 0 3px; color: var(--field); }
   .finnarr p { margin: 0; color: #dcdcdc; font-weight: 400; font-size: 13.5px; line-height: 1.5; }
+  /* DEEP DIVE: one collapsible, scrollable block per statement */
+  .finnarr details.deep { border: 1px solid var(--line); margin-bottom: 6px; background: #050505; }
+  .finnarr details.deep summary { cursor: pointer; color: #ffffff; font-weight: 700; font-size: 13px; padding: 6px 8px;
+                                  background: #121212; list-style-position: inside; }
+  .finnarr details.deep[open] summary { border-bottom: 1px solid var(--line); }
+  .finnarr details.deep summary .note { margin-left: 8px; font-weight: 400; }
+  .deepbody { max-height: 58vh; overflow: auto; padding: 2px 10px 8px; }
+  .deepbody ul { margin: 0 0 6px 18px; padding: 0; }
+  .deepbody li { color: var(--amber); font-size: 13.5px; line-height: 1.5; margin-bottom: 5px; }
+  a.web { font-size: 10px; font-weight: 700; color: #000 !important; background: var(--link); padding: 0 4px; margin-left: 5px;
+          text-decoration: none; white-space: nowrap; }
   /* terminal colour rule: content in orange, labels and section titles in white */
   .narr p, .finnarr p { color: var(--amber) !important; }
   td, td.title, table.fs td, table.fs td a, td.t { color: var(--amber) !important; }
@@ -208,13 +219,15 @@
       Rows marked <i>computed</i> are worked out by Python from the reported lines. Click a number to open its filing.</div>
   </section>
   <section class="panel">
-    <div class="controls"><h2>AN<em>Analysis</em></h2><span class="note" id="finMeta"></span></div>
+    <div class="controls"><span id="finTabs" class="keys"></span><span class="note" id="finMeta"></span>
+      <button id="deepAll" class="act" style="display:none;margin-left:auto">Expand all</button></div>
     <div class="finnarr" id="finNarr"></div>
   </section>
 </div>
 <script>
 const D = __DATA__;
-const S = {view: "market", finPeriod: "quarterly", finCount: 8, finStmt: "All",
+const S = {view: "market", finPeriod: "quarterly", finCount: 8, finStmt: "All", finTab: "AN ANALYSIS",
+           deepOpen: {IS: true, BS: false, CF: false},
            ticker: D.tickers[0], period: "1Y", mode: "price", ctype: "line", series: D.series_order[0], mperiod: "All",
            stock: "ALL", sortKey: null, sortDir: 1};
 const $ = id => document.getElementById(id);
@@ -460,6 +473,8 @@ function drawFin() {
   });
   $("finTables").innerHTML = h + "</tbody></table>";
 
+  $("deepAll").style.display = S.finTab === "DEEP DIVE" ? "" : "none";
+  if (S.finTab === "DEEP DIVE") { drawDeep(t); return; }
   const e = D.fin_narr[t];
   if (!e) { $("finNarr").innerHTML = '<p class="note">No analysis yet for the latest filing (run the dashboard with Claude).</p>';
             $("finMeta").textContent = ""; return; }
@@ -471,6 +486,47 @@ function drawFin() {
     narrHTML([{title, sentences: (e.narr || {})[k] || [], missing: "No analysis for this part (removed by the check)."}],
              c => (e.sources || {})[`${t}|${c}`]) + "</section>").join("");
   if (S.finStmt !== "All" && $("fn_" + S.finStmt)) $("fn_" + S.finStmt).scrollIntoView({block: "nearest"});
+}
+const DEEP_GROUPS = [["lines", "Lines that matter"], ["drivers", "What's driving them"], ["outlook", "Outlook"],
+                     ["watch", "Watch"]];
+function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return "web"; } }
+function drawDeep(t) {
+  const e = (D.deep || {})[t];
+  if (!e) {
+    $("finMeta").textContent = "";
+    $("finNarr").innerHTML = '<p class="note">No deep dive yet for this company. It is researched every Monday ' +
+      '(or run: python -m pipeline.run_dashboard --refresh-deep ' + esc(t) + ').</p>';
+    return;
+  }
+  $("finMeta").innerHTML = `Researched ${esc(e.day)} with web search · refreshed every Monday · ` +
+    `<span class="web" style="font-size:10px;font-weight:700;color:#000;background:var(--link);padding:0 4px">WEB</span> ` +
+    `= from a web page (numbers not checked by Python); [n] = checked against the filing`;
+  if (["IS", "BS", "CF"].includes(S.finStmt)) S.deepOpen[S.finStmt] = true;
+  const refs = {};
+  const src = c => (e.sources || {})[`${t}|${c}`] || {};
+  $("finNarr").innerHTML = ["IS", "BS", "CF"].map(st => {
+    const g = (e.narr || {})[st] || {};
+    const count = DEEP_GROUPS.reduce((a, [k]) => a + (g[k] || []).length, 0);
+    const body = DEEP_GROUPS.map(([k, title]) => !(g[k] || []).length ? "" :
+      `<h3>${title}</h3><ul>` + g[k].map(b => `<li>${esc(b.text)}` +
+        (b.cites || []).map(c => {
+          refs[c] = refs[c] || Object.keys(refs).length + 1;
+          const s = src(c);
+          return `<sup><a href="${esc(s.url || "#")}" target="_blank" title="${esc(s.label || c)}">[${refs[c]}]</a></sup>`;
+        }).join("") +
+        (b.web || []).map(w => `<a class="web" href="${esc(w.url)}" target="_blank" title="${esc(w.title)}">WEB · ${esc(w.publisher || hostOf(w.url))}</a>`).join("") +
+        "</li>").join("") + "</ul>").join("");
+    return `<details class="deep" id="dd_${st}" data-st="${st}" ${S.deepOpen[st] ? "open" : ""}>` +
+      `<summary>${STMT_NAMES[st]}<span class="note">${count} point(s)</span></summary>` +
+      `<div class="deepbody">${body || '<p class="note">Nothing kept for this statement (removed by the checks).</p>'}</div></details>`;
+  }).join("");
+  document.querySelectorAll("#finNarr details.deep").forEach(d =>
+    d.addEventListener("toggle", () => { S.deepOpen[d.dataset.st] = d.open; deepAllLabel(); }));
+  deepAllLabel();
+  if (["IS", "BS", "CF"].includes(S.finStmt)) $("dd_" + S.finStmt).scrollIntoView({block: "nearest"});
+}
+function deepAllLabel() {
+  $("deepAll").textContent = Object.values(S.deepOpen).every(Boolean) ? "Collapse all" : "Expand all";
 }
 function setView(v) {
   S.view = v;
@@ -484,6 +540,12 @@ function finControls() {
   periodButtons($("finPeriod"), ["quarterly", "annual"], "finPeriod", () => {
     S.finCount = S.finPeriod === "annual" ? 5 : 8; fillCount(); drawFin(); });
   periodButtons($("finStmt"), ["All", "IS", "BS", "CF", "RATIOS"], "finStmt", drawFin);
+  periodButtons($("finTabs"), ["AN ANALYSIS", "DEEP DIVE"], "finTab", drawFin);
+  $("deepAll").onclick = () => {
+    const open = !Object.values(S.deepOpen).every(Boolean);
+    ["IS", "BS", "CF"].forEach(k => S.deepOpen[k] = open);
+    drawFin();
+  };
   fillCount();
 }
 function fillCount() {
@@ -538,7 +600,11 @@ const WIN_CSS = `
   h3 { color: #fff; font-size: 1em; margin: 14px 0 6px; }
   p { color: #ffa028; margin: 0 0 14px; }
   sup a { color: #5ec8ff; text-decoration: none; font-size: .65em; margin-left: 1px; }
-  section { border: 0 !important; background: none !important; padding: 0 !important; }`;
+  section { border: 0 !important; background: none !important; padding: 0 !important; }
+  details { border: 1px solid #262626; margin-bottom: 8px; } details summary { cursor: pointer; color: #fff; font-weight: 700;
+  padding: 6px 10px; background: #121212; } details .note { color: #8a8a8a; margin-left: 8px; font-weight: 400; }
+  .deepbody { padding: 2px 14px 8px; } li { color: #ffa028; margin-bottom: 6px; }
+  a.web { font-size: .6em; font-weight: 700; color: #000; background: #5ec8ff; padding: 0 4px; margin-left: 5px; text-decoration: none; }`;
 function openWindow(title, html) {
   const off = (popCount++ % 8) * 30;
   const w = window.open("", "narr_" + Date.now() + "_" + popCount,
@@ -557,7 +623,7 @@ function openWindow(title, html) {
 function popOnClick(el, title) {
   el.title = "Click to open in its own window (move to another monitor, maximise, snap to half screen)";
   el.addEventListener("click", e => {
-    if (e.target.closest("a")) return;                 // citation links still open their source
+    if (e.target.closest("a, summary, button")) return;   // links open their source; summaries fold/unfold
     if (!el.textContent.trim()) return;
     openWindow(title(), el.innerHTML);
   });
@@ -573,6 +639,7 @@ function init() {
     if (k === "stock") S.stock = v;
     if (k === "view") S.view = v === "fin" ? "fin" : "market";
     if (k === "stmt") S.finStmt = v;
+    if (k === "tab") S.finTab = v === "deep" ? "DEEP DIVE" : "AN ANALYSIS";
     if (k === "fperiod") S.finPeriod = v === "annual" ? "annual" : "quarterly";
   });
   $("day").textContent = D.day;
@@ -610,7 +677,8 @@ function init() {
   finControls();
   popOnClick($("priceNarr"), () => `${S.ticker} · last month (price + news)`);
   popOnClick($("macroNarr"), () => `Fed & macro · ${D.series[S.series].label}`);
-  popOnClick($("finNarr"), () => `${S.ticker} · financial statement analysis (${(D.fin[S.ticker]?.latest || {}).form || ""})`);
+  popOnClick($("finNarr"), () => S.finTab === "DEEP DIVE" ? `${S.ticker} · deep dive (${((D.deep || {})[S.ticker] || {}).day || ""})`
+    : `${S.ticker} · financial statement analysis (${(D.fin[S.ticker]?.latest || {}).form || ""})`);
   $("seriesSel").onchange = e => { S.series = e.target.value; drawMacro(); };
   $("typeBtn").onclick = () => {
     S.ctype = S.ctype === "line" ? "candle" : "line";

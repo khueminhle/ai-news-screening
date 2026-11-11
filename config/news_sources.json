@@ -1,0 +1,27 @@
+{
+  "description": "News sources for connectors/news_rss.py. Only headlines from these sites are kept. Company news: one Google News RSS search per watchlist ticker (its 'news_query' or name). Market news: the market_queries below plus the direct outlet feeds. Edit freely.",
+  "sites": {
+    "reuters.com": "Reuters",
+    "bloomberg.com": "Bloomberg",
+    "wsj.com": "WSJ",
+    "ft.com": "Financial Times",
+    "cnbc.com": "CNBC",
+    "barrons.com": "Barron's",
+    "marketwatch.com": "MarketWatch",
+    "apnews.com": "AP",
+    "nikkei.com": "Nikkei Asia"
+  },
+  "lookback_days": 2,
+  "max_per_ticker": 20,
+  "max_per_market_query": 30,
+  "market_queries": [
+    "stocks OR \"Wall Street\" OR \"S&P 500\" OR Nasdaq",
+    "\"Federal Reserve\" OR \"Fed\" OR inflation OR \"Treasury yields\"",
+    "economy OR jobs OR GDP OR tariffs OR recession"
+  ],
+  "feeds": {
+    "WSJ Markets": "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain",
+    "CNBC Top News": "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+  },
+  "skip_title_patterns": ["price today", "stock price", "stock quote", "index price", "live updates:", "podcast"]
+}

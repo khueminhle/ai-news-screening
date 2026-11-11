@@ -34,7 +34,6 @@ jobs:
     env:
       SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
       FINNHUB_API: ${{ secrets.FINNHUB_API }}
-      NEWSDATA_API: ${{ secrets.NEWSDATA_API }}
       FRED_API: ${{ secrets.FRED_API }}
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       SMTP_USER: ${{ secrets.SMTP_USER }}
@@ -65,7 +64,7 @@ jobs:
         run: |
           missing=""
           CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"; CLOUDFLARE_ACCOUNT_ID="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
-          for v in SEC_USER_AGENT FINNHUB_API NEWSDATA_API FRED_API CLAUDE_CODE_OAUTH_TOKEN SMTP_USER SMTP_PASSWORD DIGEST_TO CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+          for v in SEC_USER_AGENT FINNHUB_API FRED_API CLAUDE_CODE_OAUTH_TOKEN SMTP_USER SMTP_PASSWORD DIGEST_TO CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
             if [ -z "${!v}" ]; then missing="$missing $v"; fi
           done
           if [ -n "$missing" ]; then echo "::error::Missing secrets:$missing"; exit 1; fi

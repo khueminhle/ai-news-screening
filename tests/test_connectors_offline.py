@@ -1,35 +1,41 @@
 """Connector logic on saved real responses (no network, no API keys)."""
 import json
+from datetime import date
 from pathlib import Path
 
 from bs4 import BeautifulSoup
 
-from connectors.finnhub import FinnhubConnector
-from connectors.newsdata import NewsDataConnector
+from connectors.news_rss import NewsRssConnector, parse_feed, site_of, strip_outlet
 from connectors.sec import columns_to_rows, skip_reason
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def test_finnhub_news_picks_day_or_latest_earlier_day():
-    c = object.__new__(FinnhubConnector)          # no API key needed for parsing
-    c.fallback_to_latest = True
-    c.name = "finnhub"
-    stories = json.loads((FIXTURES / "finnhub_company_news_UI.json").read_text(encoding="utf-8"))
-    items = c._pick_news("UI", stories, "2099-01-01")
-    assert items and all(it.extra["is_latest_fallback"] for it in items)
-    assert len({it.published_at[:10] for it in items}) == 1
+SITES = {"reuters.com": "Reuters", "bloomberg.com": "Bloomberg", "wsj.com": "WSJ", "cnbc.com": "CNBC"}
 
 
-def test_newsdata_google_copy_has_same_dedupe_key():
-    a = {"title": "Apple is racing to make Siri more agentic", "source_id": "theverge"}
-    b = {"title": "Apple is racing to make Siri more agentic - The Verge", "source_id": "google"}
-    assert NewsDataConnector._dedupe_key(a) == NewsDataConnector._dedupe_key(b)
+def test_rss_keeps_only_listed_outlets():
+    assert site_of("https://www.reuters.com", SITES) == "Reuters"
+    assert site_of("https://notreuters.com", SITES) is None
+    assert strip_outlet("Baird downgrades Nvidia - Bloomberg.com") == "Baird downgrades Nvidia"
+    stories = parse_feed((FIXTURES / "google_news_rss.xml").read_bytes(), SITES)
+    assert {s["publisher"] for s in stories} == {"CNBC", "Bloomberg", "WSJ", "Reuters"}    # the blog is dropped
 
 
-def test_newsdata_fixture_has_placeholders_we_must_drop():
-    batch = json.loads((FIXTURES / "newsdata_market_batch.json").read_text(encoding="utf-8"))
-    assert all(a["content"] == "ONLY AVAILABLE IN PAID PLANS" for a in batch["results"])
+def test_rss_connector_window_skip_patterns_and_dedupe(monkeypatch):
+    cfg = {"sites": SITES, "lookback_days": 2, "max_per_ticker": 20, "max_per_market_query": 30,
+           "market_queries": ["stocks"], "feeds": {}, "skip_title_patterns": ["stock price"]}
+    c = NewsRssConnector(entries=[{"ticker": "NVDA", "name": "Nvidia"}, {"ticker": "AAPL", "name": "Apple"}],
+                         config=cfg, raw_dir=Path("unused"), seconds_between_calls=0)
+    xml = (FIXTURES / "google_news_rss.xml").read_bytes()
+    monkeypatch.setattr(c, "_search", lambda words: xml)
+    monkeypatch.setattr(c, "_save_raw", lambda *a: None)
+    assert c.queries == {"NVDA": '"Nvidia"', "AAPL": '"Apple"'}
+    items = c.fetch(date(2026, 11, 11))
+    titles = {it.title for it in items}
+    assert titles == {"Nvidia shares rebound 5% as Huang faces scrutiny", "Baird downgrades Nvidia"}  # old + quote page gone
+    assert all(it.tickers == ["AAPL", "NVDA"] and it.item_type == "news" for it in items)          # one item, tickers merged
+    assert all(it.extra["publisher"] in ("CNBC", "Bloomberg") for it in items) and not c.errors
 
 
 def test_sec_index_download_rules():

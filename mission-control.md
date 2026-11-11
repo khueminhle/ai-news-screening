@@ -28,8 +28,8 @@
 | # | Connector | Purpose | Auth (env var) | Free tier notes (tested 2026-11-10) | Status |
 |---|---|---|---|---|---|
 | 1 | SEC EDGAR (`connectors/sec.py`) | 8-K, 10-Q, 10-K (+ amendments) with the full text of the main document and every text exhibit | `SEC_USER_AGENT` (no key) | Free. Max 10 requests/sec (we use 8). Descriptive User-Agent required. | Built |
-| 2 | Finnhub (`connectors/finnhub.py`) | Company news, general market/macro news, analyst rating counts, earnings calendar | `FINNHUB_API` | ~60 calls/min. Headline + summary only (max ~500 chars). Press releases, upgrades/downgrades and price targets are paid (HTTP 403). Earnings calendar caps at 1,500 rows per call (connector splits the date range). | Built |
-| 3 | NewsData.io (`connectors/newsdata.py`) | Second news source: headlines naming watchlist companies | `NEWSDATA_API` | ~200 credits/day, 10 articles per credit. Headline search (`qInTitle`) only; ticker search, archive, full content and AI summary are paid. News delayed ~12 hours. | Built |
+| 2 | Finnhub (`connectors/finnhub.py`) | Analyst rating counts, earnings calendar (news no longer used since 2026-11-11) | `FINNHUB_API` | ~60 calls/min. Upgrades/downgrades and price targets are paid (HTTP 403). Earnings calendar caps at 1,500 rows per call (connector splits the date range). | Built |
+| 3 | RSS news (`connectors/news_rss.py`, sites in `config/news_sources.json`) | The only news source: headlines from Reuters, Bloomberg, WSJ, FT, CNBC, Barron's, MarketWatch, AP, Nikkei Asia. Company news = one Google News RSS search per ticker (`news_query` or name) restricted to those sites; market news = 3 market searches + WSJ Markets and CNBC Top News feeds | none | Free. Headline, outlet, link, time only (articles are paywalled; no summary stored). Every result re-checked against the site list; quote pages/podcasts skipped by title. Last 2 days, max 20 per ticker / 30 per market query. Replaced NewsData + Finnhub news on 2026-11-11. | Built |
 | 4 | Federal Reserve (`connectors/fed.py`) | FOMC statements, minutes, speeches, testimony, **full text** | none | Free RSS + public-domain pages. | Built |
 | 5 | FRED (`connectors/macro_fred.py`) | Macro series listed in `config/fred_series.json` (rates, yields, inflation, jobs, growth, markets) | `FRED_API` | Free key, 120 requests/min. Key must be in the URL, so it is scrubbed from error messages. | Built |
 | 6 | yfinance (`connectors/prices_yfinance.py`) | Daily prices and volume for the watchlist + S&P 500 and Nasdaq-100 | none | Unofficial wrapper around Yahoo Finance. Can break without notice. Personal, non-commercial use. | Built |
@@ -40,7 +40,7 @@
 | 11 | Live dashboard: Cloudflare Pages + Cloudflare Access (planned) | Hosts the latest `dashboard.html` at a private link, updated by every run; login by one-time code to the owner's email only | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (GitHub secrets) | Free: Pages unlimited bandwidth, 500 deploys/month; Access free up to 50 users (sign-up may ask for a card, nothing charged) | Built (M7, section 13a) |
 | 10 | Delivery: Gmail SMTP (`delivery/send_email.py`) | Emails the daily digest (body) with the dashboard attached; alert emails | `SMTP_USER`, `SMTP_PASSWORD` (Gmail app password), `DIGEST_TO` (+ `SMTP_HOST`, `SMTP_PORT`) | Own Gmail to itself. App password needs 2-Step Verification; revocable any time. Gmail limit 25 MB per email (today ~7.7 MB) | Built (M7); scheduling on GitHub Actions to do |
 
-**Removed:** Financial Modeling Prep (FMP). Dropped on 2026-11-10 to keep the project simple; Finnhub + NewsData cover news.
+**Removed:** Financial Modeling Prep (FMP), dropped 2026-11-10. NewsData.io and Finnhub news, dropped 2026-11-11 (low-quality outlets); replaced by RSS headlines from major outlets.
 
 **Connector rules (apply to every connector)**
 
@@ -61,7 +61,7 @@
  ───────                 ──────────                ─────────────────           ─────────────────────────────────────
  SEC EDGAR  ───────────► sec.py            ──┐
  Finnhub    ───────────► finnhub.py        ──┤
- NewsData   ───────────► newsdata.py       ──┼──► data/raw/<source>/<day>/ ──► clean + save ──► items, filings, documents,
+ RSS news   ───────────► news_rss.py       ──┼──► data/raw/<source>/<day>/ ──► clean + save ──► items, filings, documents,
  Fed        ───────────► fed.py            ──┤    + documents (full texts)     (storage/db.py)   document_sections, prices,
  FRED       ───────────► macro_fred.py     ──┤                                                   macro_series, analyst_ratings,
  yfinance   ───────────► prices_yfinance.py──┘                                                   earnings_calendar, events
@@ -100,7 +100,7 @@ AI News Screening/
 │   ├── sec.py
 │   ├── sec_facts.py            # SEC company facts -> financials (M5)
 │   ├── finnhub.py
-│   ├── newsdata.py
+│   ├── news_rss.py
 │   ├── fed.py
 │   ├── macro_fred.py
 │   └── prices_yfinance.py
@@ -239,7 +239,7 @@ python -m pipeline.run_daily      # (M7) all of the above + email; this is what 
 **How the digest is built (M6)**
 
 1. **Items:** relevant + high/medium importance (M5 labels), first seen since the previous digest (first digest: last 7 days), published within the last 7 days, one entry per story (copies shown as "Also reported by"). Low importance is left out completely.
-2. **Fact sheet per company with news, plus one for MARKET:** a small extract of `signals.db`, each fact with an ID: `N` news, `S` SEC filing excerpt, `F` Fed text, `P:<ticker>` prices (Python works out 1d / 5d / YTD %, distance from the 52-week high, volume vs the 20-day average), `R:<ticker>` Finnhub analyst counts, `E:<ticker>` next earnings, `M:<series>` FRED. Saved as `data/digests/<day>/<SECTION>_input.json`. Companies with no news get no Claude call (they appear in the tables only).
+2. **News = headline list, not Claude bullets (since 2026-11-11):** relevant high/medium RSS headlines are listed per section (importance, outlet, time, link); Claude does not summarise them. **Fact sheet per company with new filings, plus one for MARKET when there are Fed releases:** a small extract of `signals.db`, each fact with an ID: `N` news, `S` SEC filing excerpt, `F` Fed text, `P:<ticker>` prices (Python works out 1d / 5d / YTD %, distance from the 52-week high, volume vs the 20-day average), `R:<ticker>` Finnhub analyst counts, `E:<ticker>` next earnings, `M:<series>` FRED. Saved as `data/digests/<day>/<SECTION>_input.json`. Companies with no news get no Claude call (they appear in the tables only).
 3. **Claude** (Haiku 4.5, effort low, thinking off, no tools; one call per section, in parallel) replies with bullets: `{"text": ..., "cites": [...]}`. Python writes `<SECTION>_output.json`.
 4. **Python checks every bullet:** citation check (every cited ID exists in that sheet), check 1 (every number is in a cited fact's text), advice guard (no buy / sell / hold / "should" / price target in its own voice; allowed only when attributed and citing news or analyst counts). A failed bullet goes back to Claude once with the reason (Claude does not read the database: Python sends the same fact sheet again); still failing → removed and listed.
 5. **Python renders** `digest.md`: disclaimer, market bullets + macro table, watchlist snapshot table, company bullets, coming-up earnings (14 days), data freshness (a source not updated for 24 hours is flagged STALE), numbered sources, "Removed by fact check". Also `digest.json`, `factcheck_report.json`, and the `digests` / `digest_lines` tables.
@@ -340,7 +340,6 @@ flowchart TD
 ```
 SEC_USER_AGENT=            # your name and contact email, per SEC requirements
 FINNHUB_API=
-NEWSDATA_API=
 FRED_API=
 CLAUDE_CODE_OAUTH_TOKEN=   # from `claude setup-token`; optional on a laptop logged in to Claude Code. Never set ANTHROPIC_API_KEY
 SMTP_HOST=smtp.gmail.com
@@ -539,6 +538,9 @@ Goal: every run publishes the latest dashboard to a private link (`https://ai-ne
 | 2026-11-11 | Financial analysis: Sonnet, filings only (statements + MD&A + risk factors, no news), written once per filing and cached | User decision; financials change only with a new 10-Q / 10-K |
 | 2026-11-11 | Advice guard: "hold" flagged only as a rating ("rated / a / downgraded to hold"); "fair value" no longer flagged | It removed correct sentences ("the Fed decided to hold rates", the accounting term "fair value") |
 | 2026-11-11 | Dashboard restyled as a dark trading-terminal theme: condensed sans font, amber input fields with black text, white labels, dark period keys (amber when on), red action keys, navy chart background, price as a white line over a blue gradient with a Last / High / Average / Low box and last-price tag, white volume bars + green 15-day average (candles as a toggle), ticker tape; generic, no third-party branding | User decision, from a reference screenshot |
+| 2026-11-11 | **News from RSS of major outlets only; NewsData and Finnhub news removed** | Free APIs returned mostly low-quality outlets. Google News RSS restricted to an allowlist (Reuters, Bloomberg, WSJ, FT, CNBC, Barron's, MarketWatch, AP, Nikkei Asia) + WSJ/CNBC feeds. Headline only (paywalls). |
+| 2026-11-11 | Claude still classifies relevance/importance of every headline; the digest lists headlines instead of summarising news | User choice: no news summary needed; filings, Fed and data still get checked Claude bullets |
+| 2026-11-11 | **DEEP DIVE tab** next to AN ANALYSIS (FINANCIALS): per statement (IS/BS/CF, collapsible, scrollable) bullets in 4 groups: lines that matter, drivers, outlook, watch. Input = statements, ratios, MD&A, risk factors + earnings press release + financial statement notes + 30 days of headlines; Claude Sonnet 5.5 (medium effort) **may use WebSearch/WebFetch only** (prompt requires ≥4 searches). Refreshed weekly (when the latest is older than this week's Monday; new tickers at once). Fact-sourced bullets fully checked; web bullets keep links, tagged WEB, numbers not checkable | User decisions 2026-11-11 (web: yes; Mondays; Sonnet; name DEEP DIVE) |
 
 ---
 

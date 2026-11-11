@@ -34,7 +34,7 @@ CONNECTORS = {
     "sec": ("connectors.sec", "SecEdgarConnector"),
     "sec_facts": ("connectors.sec_facts", "SecFactsConnector"),
     "finnhub": ("connectors.finnhub", "FinnhubConnector"),
-    "newsdata": ("connectors.newsdata", "NewsDataConnector"),
+    "news_rss": ("connectors.news_rss", "NewsRssConnector"),
     "fed": ("connectors.fed", "FedConnector"),
     "fred": ("connectors.macro_fred", "FredConnector"),
     "yfinance": ("connectors.prices_yfinance", "YFinancePriceConnector"),

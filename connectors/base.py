@@ -68,10 +68,11 @@ def write_items_json(raw_dir: Path, day: date, items: list) -> Path:
 
 
 def load_watchlist_entries(path: Path = WATCHLIST_PATH) -> list[dict]:
-    """Return watchlist entries as [{"ticker": "NET", "name": "Cloudflare" or None}, ...].
+    """Return watchlist entries as [{"ticker": "NET", "name": "Cloudflare" or None, "news_query": ... or None}, ...].
 
     Accepts {"tickers": [...]} or a bare list. Each entry is a ticker string or an
-    object with "ticker" and an optional "name". Upper-cased, de-duplicated, file order.
+    object with "ticker", an optional "name" and an optional "news_query" (the words the RSS
+    news search uses instead of the name). Upper-cased, de-duplicated, file order.
     """
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
@@ -84,13 +85,14 @@ def load_watchlist_entries(path: Path = WATCHLIST_PATH) -> list[dict]:
     result: list[dict] = []
     for raw in entries:
         if isinstance(raw, dict):
-            ticker, name = str(raw.get("ticker", "")), raw.get("name")
+            ticker, name, query = str(raw.get("ticker", "")), raw.get("name"), raw.get("news_query")
         else:
-            ticker, name = str(raw), None
+            ticker, name, query = str(raw), None, None
         ticker = ticker.strip().upper()
         if ticker and ticker not in seen:
             seen.add(ticker)
-            result.append({"ticker": ticker, "name": (str(name).strip() or None) if name else None})
+            result.append({"ticker": ticker, "name": (str(name).strip() or None) if name else None,
+                           "news_query": (str(query).strip() or None) if query else None})
     return result
 
 

@@ -8,7 +8,7 @@ def test_finnhub_unix_seconds_become_utc():
     assert to_utc_z(1793984525) == "2026-11-06T17:02:05Z"
 
 
-def test_newsdata_naive_time_is_treated_as_utc():
+def test_naive_time_is_treated_as_utc():
     assert to_utc_z("2026-11-08 17:30:00") == "2026-11-08T17:30:00Z"
 
 

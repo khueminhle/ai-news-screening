@@ -132,6 +132,33 @@ def test_financial_analysis_is_cached_per_filing(setup, monkeypatch):
     assert again["fin_written"] == 0 and again["fin_cached"] == 1
 
 
+def test_deep_dive_weekly_with_web_bullets(setup, monkeypatch):
+    from pipeline import deep_dive as DD
+    from pipeline import fundamentals as F
+    monkeypatch.setattr(F, "FUND_DIR", Path(run_dashboard.DASH_DIR).parent / "fund")
+    _add_facts(setup)
+    first = run_dashboard.run(date(2026, 10, 30))                 # Friday, no deep dive yet -> researched
+    assert first["deep_written"] == 1
+    data = json.loads(Path(first["path"]).read_text(encoding="utf-8").split("const D = ", 1)[1].split(";\nconst S", 1)[0])
+    narr = data["deep"]["UI"]["narr"]
+    assert set(narr) == {"IS", "BS", "CF"} and narr["IS"]["outlook"][0]["web"][0]["publisher"] == "Reuters"
+    assert "drivers" not in narr["IS"]                            # invented number without a web source: removed
+    removed = {r["text"] for r in data["deep"]["UI"]["removed"]}
+    assert {"Sales rose 99.9%.", "Investors should buy the stock."} <= removed
+    assert run_dashboard.run(date(2026, 10, 30))["deep_written"] == 0     # this week's exists -> reused
+    assert not DD.needs_refresh("UI", date(2026, 11, 1))                   # Sunday: still the same week
+    assert DD.needs_refresh("UI", date(2026, 11, 2))                       # next Monday -> research again
+
+
+def test_deep_dive_tools_are_web_only():
+    from llm import claude_client
+    args = claude_client.build_args("m", "low", claude_client.WEB_TOOLS)
+    assert args[args.index("--tools") + 1] == "WebSearch,WebFetch" and "--allowedTools" in args
+    assert claude_client.build_args("m", "low")[claude_client.build_args("m", "low").index("--tools") + 1] == ""
+    with pytest.raises(ValueError):
+        claude_client.build_args("m", "low", "Bash")
+
+
 def test_missing_digest_stops_with_a_clear_message(setup):
     with pytest.raises(SystemExit, match="run_digest"):
         run_dashboard.run(date(2026, 10, 31))

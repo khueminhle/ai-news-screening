@@ -18,6 +18,22 @@ if prompt.startswith("# Write financial statement analysis"):
     print(json.dumps({"type": "result", "is_error": False, "result": json.dumps({"sentences": out})}))
     sys.exit(0)
 
+if prompt.startswith("# Deep dive"):
+    # Per statement: a checked fact bullet, a web bullet with an unverifiable number (kept, tagged WEB),
+    # an invented number with no web source (removed after the retry) and advice (removed).
+    if "## Fix these sentences" in prompt:
+        out = []
+    else:
+        out = []
+        for st in ("IS", "BS", "CF"):
+            out += [{"part": f"{st}.lines", "text": "Revenue: it grew strongly.", "cites": ["FS:IS"], "web": []},
+                    {"part": f"{st}.outlook", "text": "Analysts expect 12% growth, according to Reuters.", "cites": [],
+                     "web": [{"url": "https://www.reuters.com/x", "title": "X", "publisher": "Reuters"}]}]
+        out += [{"part": "IS.drivers", "text": "Sales rose 99.9%.", "cites": ["FS:IS"], "web": []},
+                {"part": "CF.watch", "text": "Investors should buy the stock.", "cites": ["FS:CF"], "web": []}]
+    print(json.dumps({"type": "result", "is_error": False, "result": json.dumps({"sentences": out})}))
+    sys.exit(0)
+
 if prompt.startswith("# Write dashboard narratives"):
     # One good sentence per part, one paragraph packed into one "sentence" (Python must split it),
     # and one sentence with an invented number (must be removed after the retry).

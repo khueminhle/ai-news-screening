@@ -1,10 +1,8 @@
-"""Finnhub connector: company news, market/macro news, analyst ratings, earnings calendar.
+"""Finnhub connector: analyst ratings and earnings calendar.
+
+News comes from connectors/news_rss.py (big outlets only); Finnhub news is no longer used.
 
 Reads every ticker in watchlist/watchlist.json and returns:
-  - company news for the given day. If a ticker has no news that day, it returns
-    the news from the most recent earlier day within --lookback days, marked with
-    extra["is_latest_fallback"] = True.
-  - general market and macro news (economy, Fed, bonds), not tied to a ticker.
   - analyst rating counts per ticker (strong buy ... strong sell), monthly, with the
     change from the previous month. Upgrades/downgrades and price targets are paid only.
   - upcoming earnings dates for watchlist tickers, from the day to --earnings-ahead days later.
@@ -12,11 +10,10 @@ Reads every ticker in watchlist/watchlist.json and returns:
 Run it:
     python -m connectors.finnhub                     # today
     python -m connectors.finnhub --day 2026-11-06
-    python -m connectors.finnhub --lookback 14 --earnings-ahead 60
+    python -m connectors.finnhub --earnings-ahead 60
 
 Needs FINNHUB_API in .env. Free tier: about 60 calls a minute, so the connector
 spaces calls about 1.1 s apart (roughly 1 minute per 55 tickers).
-Only headlines, summaries and links are stored, never full articles.
 """
 from __future__ import annotations
 
@@ -50,11 +47,9 @@ class FinnhubConnector(Connector):
     def __init__(
         self,
         tickers: list[str] | None = None,
-        lookback_days: int = 7,
         earnings_ahead_days: int = 120,
         calls_per_minute: int = 55,
         raw_dir: Path = RAW_DIR / "finnhub",
-        fallback_to_latest: bool = True,
     ):
         super().__init__(tickers)
         load_dotenv()
@@ -65,9 +60,7 @@ class FinnhubConnector(Connector):
         self.session = requests.Session()
         # Key goes in a header, not the URL, so it never shows up in logs or error messages.
         self.session.headers.update({"X-Finnhub-Token": api_key})
-        self.lookback_days = lookback_days
         self.earnings_ahead_days = earnings_ahead_days
-        self.fallback_to_latest = fallback_to_latest
         self.raw_dir = Path(raw_dir)
         self.min_interval = 60.0 / calls_per_minute
         self._last_request = 0.0
@@ -112,57 +105,7 @@ class FinnhubConnector(Connector):
     # ---------- fetch ----------
 
     def fetch(self, day: date) -> list[Item]:
-        news = self.fetch_news(day)
-        market = self.fetch_market_news(day)
-        ratings = self.fetch_recommendations(day)
-        earnings = self.fetch_earnings(day)
-        return news + market + ratings + earnings
-
-    def fetch_market_news(self, day: date) -> list[Item]:
-        """General market and macro news (economy, Fed, bonds, markets). Not tied to a ticker.
-
-        Finnhub returns about the latest 100 stories. Keeps the day's stories, or the
-        latest earlier day's if there are none.
-        """
-        day_str = day.isoformat()
-        try:
-            resp = self._get("/news", {"category": "general"})
-        except Exception as exc:
-            msg = f"market news: {exc}"
-            log.error(msg)
-            self.errors.append(msg)
-            return []
-        self._save_raw(f"{day_str}/market_news.json", resp.content)
-
-        dated = []
-        for s in resp.json():
-            if s.get("datetime") and s.get("headline"):
-                published = datetime.fromtimestamp(s["datetime"], tz=timezone.utc)
-                if published.date().isoformat() <= day_str:
-                    dated.append((published, s))
-        chosen_day = day_str
-        if self.fallback_to_latest and not any(p.date().isoformat() == day_str for p, _ in dated):
-            chosen_day = max((p.date().isoformat() for p, _ in dated), default=day_str)
-
-        items = [
-            Item(
-                source=self.name,
-                source_id=str(s.get("id")),
-                tickers=[],
-                title=s["headline"],
-                url=s.get("url", ""),
-                published_at=published.isoformat(),
-                item_type="market_news",
-                extra={
-                    "publisher": s.get("source"),
-                    "summary": s.get("summary"),
-                    "is_latest_fallback": chosen_day != day_str,
-                },
-            )
-            for published, s in dated if published.date().isoformat() == chosen_day
-        ]
-        log.info("Market news: %d story(ies) for %s", len(items), chosen_day)
-        return sorted(items, key=lambda it: it.published_at, reverse=True)
+        return self.fetch_recommendations(day) + self.fetch_earnings(day)
 
     def fetch_recommendations(self, day: date) -> list[Item]:
         """Analyst rating counts per ticker (monthly), with the change from the month before.
@@ -209,68 +152,6 @@ class FinnhubConnector(Connector):
             ))
         log.info("Analyst ratings: %d ticker(s)", len(items))
         return items
-
-    def fetch_news(self, day: date) -> list[Item]:
-        day_str = day.isoformat()
-        start = (day - timedelta(days=self.lookback_days)).isoformat() if self.fallback_to_latest else day_str
-        log.info("Fetching news for %d tickers (%s to %s)", len(self.tickers), start, day_str)
-
-        by_story: dict[str, Item] = {}  # one Item per story, even if several tickers mention it
-        for n, ticker in enumerate(self.tickers, start=1):
-            try:
-                resp = self._get("/company-news", {"symbol": ticker, "from": start, "to": day_str})
-                self._save_raw(f"{day_str}/news/{ticker}.json", resp.content)
-                found = self._pick_news(ticker, resp.json(), day_str)
-                for item in found:
-                    key = item.url or item.source_id
-                    if key in by_story:
-                        if ticker not in by_story[key].tickers:
-                            by_story[key].tickers.append(ticker)
-                    else:
-                        by_story[key] = item
-                log.info("[%d/%d] %s: %d story(ies)", n, len(self.tickers), ticker, len(found))
-            except Exception as exc:  # one failed ticker never stops the rest
-                msg = f"news {ticker}: {exc}"
-                log.error(msg)
-                self.errors.append(msg)
-        return list(by_story.values())
-
-    def _pick_news(self, ticker: str, stories: list[dict], day_str: str) -> list[Item]:
-        """Keep stories from day_str. If none, keep stories from the latest earlier day."""
-        dated = []
-        for s in stories:
-            ts = s.get("datetime")
-            if not ts or not s.get("headline"):
-                continue
-            published = datetime.fromtimestamp(ts, tz=timezone.utc)
-            dated.append((published.date().isoformat(), published, s))
-
-        on_day = [d for d in dated if d[0] == day_str]
-        if on_day or not self.fallback_to_latest:
-            chosen, is_fallback = on_day, False
-        else:
-            latest = max((d[0] for d in dated if d[0] < day_str), default=None)
-            chosen, is_fallback = [d for d in dated if d[0] == latest], True
-
-        return [
-            Item(
-                source=self.name,
-                source_id=str(s.get("id")),
-                tickers=[ticker],
-                title=s["headline"],
-                url=s.get("url", ""),
-                published_at=published.isoformat(),
-                item_type="news",
-                extra={
-                    "publisher": s.get("source"),
-                    "summary": s.get("summary"),
-                    "category": s.get("category"),
-                    "related": s.get("related"),
-                    "is_latest_fallback": is_fallback,
-                },
-            )
-            for _, published, s in chosen
-        ]
 
     def _earnings_rows(self, start: date, end: date) -> list[dict]:
         """Calendar rows for all companies in [start, end].
@@ -329,43 +210,23 @@ class FinnhubConnector(Connector):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Fetch Finnhub company news, market news, analyst ratings and earnings calendar")
+    parser = argparse.ArgumentParser(description="Fetch Finnhub analyst ratings and earnings calendar")
     parser.add_argument("--day", default="today", help="YYYY-MM-DD or 'today' (default)")
-    parser.add_argument("--lookback", type=int, default=7, help="Days to look back for news when a ticker has none on --day (default 7)")
     parser.add_argument("--earnings-ahead", type=int, default=120, help="Days ahead to check for earnings dates (default 120)")
-    parser.add_argument("--no-fallback", action="store_true", help="Only return news from --day")
     args = parser.parse_args()
 
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
     day = date.today() if args.day == "today" else date.fromisoformat(args.day)
 
-    connector = FinnhubConnector(
-        lookback_days=args.lookback,
-        earnings_ahead_days=args.earnings_ahead,
-        fallback_to_latest=not args.no_fallback,
-    )
+    connector = FinnhubConnector(earnings_ahead_days=args.earnings_ahead)
     items = connector.fetch(day)
 
     out = connector.raw_dir / day.isoformat() / "items.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps([it.to_dict() for it in items], indent=2), encoding="utf-8")
 
-    news = [it for it in items if it.item_type == "news"]
-    market = [it for it in items if it.item_type == "market_news"]
     ratings = [it for it in items if it.item_type == "analyst_ratings"]
     earnings = [it for it in items if it.item_type == "earnings_calendar"]
-
-    print(f"\n{len(news)} company news story(ies) for {day} (* = none that day, showing the latest earlier day)")
-    for it in news:
-        mark = "*" if it.extra.get("is_latest_fallback") else " "
-        print(f" {mark}{','.join(it.tickers):<10} {it.published_at[:16]}  {it.extra.get('publisher') or '':<14} {it.title[:80]}")
-
-    print(f"\n{len(market)} market/macro news story(ies) (* = latest earlier day)")
-    for it in market[:15]:
-        mark = "*" if it.extra.get("is_latest_fallback") else " "
-        print(f" {mark}{it.published_at[:16]}  {it.extra.get('publisher') or '':<10} {it.title[:85]}")
-    if len(market) > 15:
-        print(f"  ... and {len(market) - 15} more in items.json")
 
     print(f"\nAnalyst rating counts ({len(ratings)} ticker(s))")
     for it in ratings:
