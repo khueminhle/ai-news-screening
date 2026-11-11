@@ -41,31 +41,83 @@ CONNECTORS = {
 }
 
 
+AUTO_BACKFILL_YEARS = 2
+
+
+def _run_connector(conn, name: str, module: str, cls: str, day: date, kwargs: dict, raw_sub: str = "") -> dict:
+    started = time.monotonic()
+    run_id = start_run(conn, name, day.isoformat())
+    errors: list[str] = []
+    counts: dict = {}
+    status = "failed"
+    try:
+        connector = getattr(importlib.import_module(module), cls)(**kwargs)
+        items = connector.fetch(day)
+        write_items_json(connector.raw_dir / raw_sub if raw_sub else connector.raw_dir, day, items)
+        counts = {"items_fetched": len(items), **save_items(conn, items)}
+        errors = list(connector.errors)
+        status = "degraded" if errors else "ok"
+    except Exception as exc:
+        errors.append(f"{type(exc).__name__}: {exc}")
+        log.error("%s failed:\n%s", name, traceback.format_exc())
+    finish_run(conn, run_id, status, counts, errors)
+    return {"connector": name, "status": status, "counts": counts, "errors": errors,
+            "seconds": round(time.monotonic() - started, 1)}
+
+
+def tickers_needing_backfill(conn, tickers: list[str], day: date) -> list[str]:
+    """Watchlist tickers whose 2-year SEC history was never loaded.
+
+    A ticker counts as done once it is in sec_backfills. Tickers that already have filings older than ~10 months
+    (loaded before this list existed) are recorded as done instead of being loaded again.
+    """
+    cutoff = date.fromordinal(day.toordinal() - 300).isoformat()
+    need = []
+    for t in tickers:
+        if conn.execute("SELECT 1 FROM sec_backfills WHERE ticker = ?", (t,)).fetchone():
+            continue
+        old = conn.execute("""SELECT COUNT(*) FROM filings WHERE (',' || tickers || ',') LIKE ? AND filed_date <= ?""",
+                           (f"%,{t},%", cutoff)).fetchone()[0]
+        if old:
+            mark_backfilled(conn, [t], "already loaded earlier")
+        else:
+            need.append(t)
+    return need
+
+
+def mark_backfilled(conn, tickers: list[str], note: str) -> None:
+    from connectors.base import utc_now_z
+    conn.executemany("INSERT OR REPLACE INTO sec_backfills (ticker, years, done_at, note) VALUES (?, ?, ?, ?)",
+                     [(t, AUTO_BACKFILL_YEARS, utc_now_z(), note) for t in tickers])
+    conn.commit()
+
+
 def run(day: date, only: list[str] | None = None, backfill_sec_years: int | None = None) -> list[dict]:
+    from connectors.base import load_watchlist
     conn = connect()
     results = []
+    watch = load_watchlist()
+
+    # New tickers on the watchlist get their SEC history loaded once, automatically (only those tickers).
+    if (not only or "sec" in only) and not backfill_sec_years:
+        new = tickers_needing_backfill(conn, watch, day)
+        if new:
+            log.info("SEC history for new watchlist tickers: %s", new)
+            r = _run_connector(conn, "sec_backfill", *CONNECTORS["sec"], day,
+                               {"tickers": new, "backfill_years": AUTO_BACKFILL_YEARS}, raw_sub="backfill")
+            r["counts"]["tickers"] = ",".join(new)
+            results.append(r)
+            if r["status"] != "failed":
+                mark_backfilled(conn, new, f"auto backfill {day.isoformat()}")
+
     for name, (module, cls) in CONNECTORS.items():
         if only and name not in only:
             continue
-        started = time.monotonic()
-        run_id = start_run(conn, name, day.isoformat())
-        errors: list[str] = []
-        counts: dict = {}
-        status = "failed"
-        try:
-            kwargs = {"backfill_years": backfill_sec_years} if name == "sec" and backfill_sec_years else {}
-            connector = getattr(importlib.import_module(module), cls)(**kwargs)
-            items = connector.fetch(day)
-            write_items_json(connector.raw_dir, day, items)
-            counts = {"items_fetched": len(items), **save_items(conn, items)}
-            errors = list(connector.errors)
-            status = "degraded" if errors else "ok"
-        except Exception as exc:
-            errors.append(f"{type(exc).__name__}: {exc}")
-            log.error("%s failed:\n%s", name, traceback.format_exc())
-        finish_run(conn, run_id, status, counts, errors)
-        results.append({"connector": name, "status": status, "counts": counts, "errors": errors,
-                        "seconds": round(time.monotonic() - started, 1)})
+        kwargs = {"backfill_years": backfill_sec_years} if name == "sec" and backfill_sec_years else {}
+        r = _run_connector(conn, name, module, cls, day, kwargs)
+        results.append(r)
+        if name == "sec" and backfill_sec_years and r["status"] != "failed":
+            mark_backfilled(conn, watch, f"manual backfill {day.isoformat()}")
 
     events = group_events(conn)
     results.append({"connector": "events", "status": "ok", "counts": events, "errors": [], "seconds": 0})

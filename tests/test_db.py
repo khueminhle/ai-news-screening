@@ -133,3 +133,38 @@ def test_ratings_history_saved_from_raw(conn, tmp_path):
     assert count(conn, "analyst_ratings") == 3
     total = conn.execute("SELECT total FROM analyst_ratings WHERE period='2026-11-01'").fetchone()[0]
     assert total == 41
+
+
+# ---------- automatic SEC history for new watchlist tickers ----------
+
+def test_new_tickers_need_backfill_once(conn):
+    from datetime import date
+    from pipeline.run_fetch import mark_backfilled, tickers_needing_backfill
+    conn.execute("""INSERT INTO filings (accession_no, cik, tickers, form, filed_date, created_at)
+                    VALUES ('old-1', 1, 'AAPL', '10-K', '2025-11-01', 'x')""")
+    conn.commit()
+    day = date(2026, 11, 12)
+    assert tickers_needing_backfill(conn, ["AAPL", "CI", "GRAB"], day) == ["CI", "GRAB"]   # AAPL has old filings
+    assert conn.execute("SELECT note FROM sec_backfills WHERE ticker='AAPL'").fetchone()[0] == "already loaded earlier"
+    mark_backfilled(conn, ["CI", "GRAB"], "auto")
+    assert tickers_needing_backfill(conn, ["AAPL", "CI", "GRAB"], day) == []      # GRAB has no filings: still done
+
+
+def test_run_backfills_only_new_tickers(tmp_path, monkeypatch):
+    from datetime import date
+    from connectors import base
+    from pipeline import run_fetch
+    path = tmp_path / "f.db"
+    monkeypatch.setattr(run_fetch, "connect", lambda: connect(path))
+    monkeypatch.setattr(base, "load_watchlist", lambda *a, **k: ["AAPL", "CI"])
+    calls = []
+
+    def fake(conn, name, module, cls, day, kwargs, raw_sub=""):
+        calls.append((name, kwargs))
+        return {"connector": name, "status": "ok", "counts": {}, "errors": [], "seconds": 0}
+    monkeypatch.setattr(run_fetch, "_run_connector", fake)
+    run_fetch.run(date(2026, 11, 12), only=["sec"])
+    assert calls[0] == ("sec_backfill", {"tickers": ["AAPL", "CI"], "backfill_years": 2}) and calls[1][0] == "sec"
+    calls.clear()
+    run_fetch.run(date(2026, 11, 13), only=["sec"])                  # next day: nothing new
+    assert [c[0] for c in calls] == ["sec"]

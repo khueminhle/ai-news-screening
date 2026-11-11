@@ -347,6 +347,14 @@ CREATE TABLE IF NOT EXISTS daily_runs (
     log_path     TEXT
 );
 
+-- Tickers whose 2-year SEC history has been loaded. A watchlist ticker missing here gets it on the next run.
+CREATE TABLE IF NOT EXISTS sec_backfills (
+    ticker   TEXT PRIMARY KEY,
+    years    INTEGER,
+    done_at  TEXT NOT NULL,
+    note     TEXT                             -- auto backfill <day> | manual backfill <day> | already loaded earlier
+);
+
 CREATE INDEX IF NOT EXISTS idx_deliveries_day    ON deliveries (day, kind, status);
 CREATE INDEX IF NOT EXISTS idx_digest_lines      ON digest_lines (digest_id);
 CREATE INDEX IF NOT EXISTS idx_labels_item       ON item_labels (item_id);
