@@ -17,3 +17,6 @@ logs/
 
 # Company code from another workflow: never in this repo
 claude oauth reference code/
+
+# Built site for the live dashboard (generated in the workflow)
+site/

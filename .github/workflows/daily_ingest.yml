@@ -40,6 +40,7 @@ jobs:
       SMTP_USER: ${{ secrets.SMTP_USER }}
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       DIGEST_TO: ${{ secrets.DIGEST_TO }}
+      DASHBOARD_URL: https://ai-news-screening.pages.dev     # shown at the top of the email (login-protected)
       PYTHONIOENCODING: utf-8
       LOG_LEVEL: WARNING
     steps:
@@ -63,7 +64,8 @@ jobs:
       - name: Check that all secrets are set
         run: |
           missing=""
-          for v in SEC_USER_AGENT FINNHUB_API NEWSDATA_API FRED_API CLAUDE_CODE_OAUTH_TOKEN SMTP_USER SMTP_PASSWORD DIGEST_TO; do
+          CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"; CLOUDFLARE_ACCOUNT_ID="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
+          for v in SEC_USER_AGENT FINNHUB_API NEWSDATA_API FRED_API CLAUDE_CODE_OAUTH_TOKEN SMTP_USER SMTP_PASSWORD DIGEST_TO CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
             if [ -z "${!v}" ]; then missing="$missing $v"; fi
           done
           if [ -n "$missing" ]; then echo "::error::Missing secrets:$missing"; exit 1; fi
@@ -100,6 +102,27 @@ jobs:
           if [ "$IN_DRY" = "true" ]; then args+=(--dry-run); fi
           if [ "$IN_RESEND" = "true" ]; then args+=(--resend); fi
           python -m pipeline.run_daily "${args[@]}"
+
+      # Live dashboard: https://ai-news-screening.pages.dev (Cloudflare Pages, locked to the owner's email by
+      # Cloudflare Access). Publishes the latest dashboard + the last 14 days; nothing else from data/.
+      - name: Build the dashboard site
+        id: site
+        if: always()
+        run: |
+          if ls data/dashboards/*/dashboard.html >/dev/null 2>&1; then
+            python -m pipeline.build_site
+            echo "ready=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "No dashboard to publish."
+          fi
+
+      - name: Publish the dashboard to Cloudflare Pages
+        if: always() && steps.site.outputs.ready == 'yes'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name=ai-news-screening --branch=main --commit-dirty=true
 
       - name: Save data for the next run
         if: always()

@@ -101,8 +101,11 @@ def build_digest_email(day: date, s: dict) -> tuple[EmailMessage, dict]:
     msg["Message-ID"] = make_msgid(domain="signal-digest.local")
 
     dash = DASH_DIR / day.isoformat() / "dashboard.html"
+    live = os.environ.get("DASHBOARD_URL", "").strip()          # set in the GitHub workflow (GitHub Pages)
     note = ("The interactive dashboard is attached (dashboard.html): download it and open it in a browser."
             if dash.exists() else "No dashboard was built today.")
+    if live and dash.exists():
+        note = f"Live dashboard: {live}  (also attached as dashboard.html)"
     msg.set_content(f"{note}\n\n{md}")                                   # plain-text version
     msg.add_alternative(digest_html(f"*{note}*\n\n" + md), subtype="html")
     info = {"attachment": None}

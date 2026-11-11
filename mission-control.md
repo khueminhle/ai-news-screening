@@ -37,6 +37,7 @@
 | 7b | SEC company facts (`connectors/sec_facts.py`) | Official 10-K / 10-Q numbers (XBRL) into `financials`, for the fact check | `SEC_USER_AGENT` | Free, one file per company (1–4 MB). Only 10-K / 10-Q: an 8-K press release is not tagged, so new results appear only once the 10-Q / 10-K is filed. | Built (M5) |
 | 8 | Embedding model (local) | Turns text into vectors for search | none | Free. Runs on CPU. Example: a bge-small or MiniLM sentence-transformers model. | Planned (M8) |
 | 9 | Economic calendar | When macro releases happen | TBD | Finnhub calendar is premium. Options: financecalendar.com (free tier, attribution required) or FRED release dates. | Later |
+| 11 | Live dashboard: Cloudflare Pages + Cloudflare Access (planned) | Hosts the latest `dashboard.html` at a private link, updated by every run; login by one-time code to the owner's email only | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (GitHub secrets) | Free: Pages unlimited bandwidth, 500 deploys/month; Access free up to 50 users (sign-up may ask for a card, nothing charged) | Built (M7, section 13a) |
 | 10 | Delivery: Gmail SMTP (`delivery/send_email.py`) | Emails the daily digest (body) with the dashboard attached; alert emails | `SMTP_USER`, `SMTP_PASSWORD` (Gmail app password), `DIGEST_TO` (+ `SMTP_HOST`, `SMTP_PORT`) | Own Gmail to itself. App password needs 2-Step Verification; revocable any time. Gmail limit 25 MB per email (today ~7.7 MB) | Built (M7); scheduling on GitHub Actions to do |
 
 **Removed:** Financial Modeling Prep (FMP). Dropped on 2026-11-10 to keep the project simple; Finnhub + NewsData cover news.
@@ -432,13 +433,38 @@ The code also accepts the older names `FINNHUB_API_KEY`, `NEWSDATA_API_KEY`, `FR
 | 5 | Classification and extraction | Schema-valid output for every item (incl. relevance). Quarantine works. SEC financial figures in `financials`. | Done (2026-11-10). 206 items labelled, 0 quarantined (quarantine tested offline); 110,436 facts in `financials`, Ubiquiti checked by hand; 42 tests pass. Label quality still to review: see section 5. |
 | 6 | Digest with fact check | Digest built from real data; every bullet number passes check 1; a planted wrong number, fake citation and "buy" are caught (tests); owner reads one full digest sentence by sentence | Built (2026-11-10): first digest 34 bullets kept, 2 fixed in the retry (an invented "58.5", a "recommend"), 0 removed; 59 tests pass. **Waiting for your review** of `data/digests/2026-11-10/digest.md` |
 | 6b | Interactive dashboard | One offline HTML file per day. Screen 1 MARKET: prices + Fed/macro charts (Plotly, all history, period buttons), checked Claude narratives (stock: last month, Haiku; macro: big picture + per series, Sonnet), news table = the checked digest. Screen 2 FINANCIALS: the three statements per company + Sonnet analysis tied to risk factors and MD&A | Built (2026-11-11): MARKET screen 42 sentences kept; FINANCIALS screen for all 6 companies (6 Sonnet analyses, 14–26 s each, cached per filing); 70 tests pass. **Waiting for your review** of `data/dashboards/2026-11-10/dashboard.html` |
-| 7 | Delivery and scheduling | Email: digest as the body, dashboard attached, alerts, no double send. `run_daily` runs fetch → classify → digest → dashboard → email. Daily schedule on GitHub Actions (10:00 UTC = 6 pm HKT, every day) | **Email part built (2026-11-11)**: dry run verified (7.7 MB, digest body + dashboard attachment), 8 tests with a fake mail server (78 total pass). Waiting for your app password for the first real send. **GitHub Actions: later** |
+| 7 | Delivery and scheduling | Email: digest as the body, dashboard attached, alerts, no double send. `run_daily` runs fetch → classify → digest → dashboard → email. Daily schedule on GitHub Actions (10:00 UTC = 6 pm HKT, every day) | **Email + GitHub Actions built (2026-11-11)**: code on GitHub (private `khueminhle/ai-news-screening`), workflow `daily_ingest.yml` triggered by cron-job.org (token fixed: Actions read + write). Still to do: first cloud run green, real email received, cache reused on run 2, alert test, **live dashboard on Cloudflare (section 13a)**. Earlier: **email part built (2026-11-11)**: dry run verified (7.7 MB, digest body + dashboard attachment), 8 tests with a fake mail server (78 total pass). Waiting for your app password for the first real send. **GitHub Actions: later** |
 | 8 | RAG over filings | Move to Postgres + pgvector. Chunk + embed documents. Cited answers. Refusal works. | Planned |
 | 9 | Research agent graph | 15-question set run. Save needs approval. | Planned |
 | 10 | Feedback and trial run | 5 trading days complete. Feedback recorded. | Planned |
 | 11 | Documentation | README, design note, 2-minute demo | Planned |
 
 ---
+
+### 13a. Plan: live dashboard on Cloudflare (next session)
+
+Goal: every run publishes the latest dashboard to a private link (`https://ai-news-screening.pages.dev`), login with a one-time code sent to the owner's email. The repo stays private. The email keeps the attachment and adds the link.
+
+**Owner (about 20 minutes):**
+1. Create a free Cloudflare account (dash.cloudflare.com).
+2. **Workers & Pages → Create → Pages → Upload assets (Direct Upload)**, project name `ai-news-screening`; upload any small file once to create it. Note the URL `ai-news-screening.pages.dev`.
+3. **API token:** My Profile → API Tokens → Create Token → *Custom token* → Permissions: **Account · Cloudflare Pages · Edit**; Account resources: your account. Copy the token (shown once).
+4. **Account ID:** Workers & Pages overview page, right-hand side ("Account ID"). Copy it.
+5. **GitHub secrets** (repo → Settings → Secrets and variables → Actions): `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+6. **Login protection:** Zero Trust (left menu) → choose a team name, pick the **Free** plan → **Access → Applications → Add an application → Self-hosted**:
+   - Domains: `ai-news-screening.pages.dev` **and** `*.ai-news-screening.pages.dev` (preview links must be protected too)
+   - Policy: **Allow**, Include → **Emails** → `khueminhle76@gmail.com`
+   - Login method: **One-time PIN** (code by email)
+   - **Session duration: 1 month** (so the login is needed about once a month per browser, not on every click)
+
+**Claude (code):**
+7. Workflow: after `run_daily`, `python -m pipeline.build_site` (already written: `site/index.html` = latest, `site/<day>/` = last 14 days, `site/archive.html`, robots blocked) → deploy with Cloudflare's wrangler (pinned version) `pages deploy site --project-name ai-news-screening --branch main`.
+8. Workflow env `DASHBOARD_URL=https://ai-news-screening.pages.dev` → the email shows "Live dashboard: <link>" (already coded in `delivery/send_email.py`).
+9. Tests for `build_site`; commit + push after owner OK.
+
+**Check (together):** trigger a dry run → open the link in a private browser window → Cloudflare login page → code → dashboard. A second email address must be refused.
+
+**Status (2026-11-12): built.** Owner steps 1–6 done (project `ai-news-screening`, token with Pages: Edit for 1 year, secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`, Access app on `ai-news-screening.pages.dev` + `*.ai-news-screening.pages.dev`, policy Allow emails = owner, session 1 month; login page verified: blocked without login, placeholder shown after Cloudflare login). Code steps 7–9 done: workflow steps *Build the dashboard site* + *Publish the dashboard to Cloudflare Pages* (cloudflare/wrangler-action@v3), `DASHBOARD_URL` in the email, `noindex` + `robots.txt`, 3 tests (81 total pass). Optional: add One-time PIN as a second login method (Zero Trust → Integrations → Identity providers). Note: the email is sent a minute before the publish step, so the link shows the new dashboard ~1 minute after the email arrives.
 
 ## 14. Decisions log
 
@@ -503,6 +529,7 @@ The code also accepts the older names `FINNHUB_API_KEY`, `NEWSDATA_API_KEY`, `FR
 | 2026-11-11 | Schedule: every day at 6 pm HKT on GitHub Actions (to set up later; `data/` kept in the Actions cache + weekly backup) | User decision |
 | 2026-11-11 | Code on GitHub: private repo `khueminhle/ai-news-screening` (personal account). Not pushed: `.env`, `data/` (except `DATABASE_NOTES.md`; `signals.db` is over GitHub's 100 MB limit), `venv/`, `claude oauth reference code/` (company code) | User decision |
 | 2026-11-11 | GitHub Actions workflow `.github/workflows/daily_ingest.yml`: manual / API trigger only (`workflow_dispatch`, inputs day / dry_run / resend), started daily by cron-job.org. Steps: secrets check, offline tests, restore `data/` from the Actions cache (first run: 2-year SEC backfill), `run_daily`, save cache, keep digest / dashboard / log as artifacts 14 days, Sunday database backup kept 8 days | User decision: schedule outside GitHub |
+| 2026-11-11 | Live dashboard on **Cloudflare Pages + Access** (private, free), not GitHub Pages | GitHub Pages on the free plan needs a public repo and the site is public; Cloudflare keeps the repo and the dashboard private |
 | 2026-11-11 | Reading windows: clicking a narrative box (price, Fed & macro, financial analysis) opens it in a **real browser window** (move to another monitor, maximise, snap to half screen, A−/A+ text size, several at once, independent of the dashboard). If pop-ups are blocked, an in-page floating window opens instead, with a "⧉ Window" button | User request: small laptop screen + external monitor |
 | 2026-11-11 | Second dashboard screen FINANCIALS: 3 statements from company facts (left) + Claude analysis per statement tied to an overall picture of risk factors and MD&A (right); switched with header keys | User decision |
 | 2026-11-11 | Financial statements as reported: Q4 shown as "see annual"; quarterly cash flow year-to-date as filed; a few ratios computed by Python and tagged | User decision (no subtraction, consistent with keeping official numbers) |
