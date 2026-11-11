@@ -10,7 +10,7 @@
 
 **Mission.** Each trading day, collect public company filings, news, prices, analyst ratings, and macro data for a six-stock watchlist. Turn them into a cited digest for a portfolio manager, and answer follow-up questions from the stored documents.
 
-**Watchlist (simulation only):** AMD, ANET (Arista), NET (Cloudflare), UI (Ubiquiti), PLTR (Palantir), AAPL (Apple). Kept in `watchlist/watchlist.json`; every connector reads it. No size limit.
+**Watchlist (simulation only, changed 2026-11-12):** AAPL (Apple), CI (Cigna), FN (Fabrinet), GOOG (Alphabet), GRAB (Grab Holdings), META (Meta), NVDA (Nvidia), SPY (SPDR S&P 500 ETF), WFC (Wells Fargo). Previous: AMD, ANET, NET, UI, PLTR, AAPL (their data is kept; fetching stopped). Kept in `watchlist/watchlist.json`; every connector reads it. No size limit.
 
 **Hard rules**
 
@@ -530,6 +530,7 @@ Goal: every run publishes the latest dashboard to a private link (`https://ai-ne
 | 2026-11-11 | Code on GitHub: private repo `khueminhle/ai-news-screening` (personal account). Not pushed: `.env`, `data/` (except `DATABASE_NOTES.md`; `signals.db` is over GitHub's 100 MB limit), `venv/`, `claude oauth reference code/` (company code) | User decision |
 | 2026-11-11 | GitHub Actions workflow `.github/workflows/daily_ingest.yml`: manual / API trigger only (`workflow_dispatch`, inputs day / dry_run / resend), started daily by cron-job.org. Steps: secrets check, offline tests, restore `data/` from the Actions cache (first run: 2-year SEC backfill), `run_daily`, save cache, keep digest / dashboard / log as artifacts 14 days, Sunday database backup kept 8 days | User decision: schedule outside GitHub |
 | 2026-11-11 | Live dashboard on **Cloudflare Pages + Access** (private, free), not GitHub Pages | GitHub Pages on the free plan needs a public repo and the site is public; Cloudflare keeps the repo and the dashboard private |
+| 2026-11-12 | Watchlist replaced with the owner's holdings: AAPL, CI, FN, GOOG, GRAB, META, NVDA, SPY, WFC (positions / short side not stored). Known gaps: GRAB files 20-F / 6-K (foreign issuer, IFRS) so no 10-K/10-Q/8-K and no `financials`; SPY is an ETF trust (no company filings, no analyst counts); WFC is a bank (no gross profit / cost of revenue lines). Tests now use their own fixed watchlist (`tests/fixtures/watchlist.json`). Workflow input `backfill_sec` loads 2 years of filings for new tickers | User decision |
 | 2026-11-11 | Reading windows: clicking a narrative box (price, Fed & macro, financial analysis) opens it in a **real browser window** (move to another monitor, maximise, snap to half screen, A−/A+ text size, several at once, independent of the dashboard). If pop-ups are blocked, an in-page floating window opens instead, with a "⧉ Window" button | User request: small laptop screen + external monitor |
 | 2026-11-11 | Second dashboard screen FINANCIALS: 3 statements from company facts (left) + Claude analysis per statement tied to an overall picture of risk factors and MD&A (right); switched with header keys | User decision |
 | 2026-11-11 | Financial statements as reported: Q4 shown as "see annual"; quarterly cash flow year-to-date as filed; a few ratios computed by Python and tagged | User decision (no subtraction, consistent with keeping official numbers) |

@@ -18,6 +18,10 @@ on:
         description: "Send the digest again even if already sent for that day"
         type: boolean
         default: false
+      backfill_sec:
+        description: "Also load 2 years of SEC filings (use once after adding tickers to the watchlist)"
+        type: boolean
+        default: false
 
 concurrency:                 # never two runs at once (they share the data cache)
   group: daily-run
@@ -84,8 +88,8 @@ jobs:
           key: data-${{ github.run_id }}
           restore-keys: data-
 
-      - name: First run only - load 2 years of SEC filings
-        if: steps.data.outputs.cache-matched-key == ''
+      - name: Load 2 years of SEC filings (first run, or when asked after watchlist changes)
+        if: steps.data.outputs.cache-matched-key == '' || inputs.backfill_sec
         run: python -m pipeline.run_fetch --only sec --backfill-sec-years 2
 
       - name: Daily run

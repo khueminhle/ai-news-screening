@@ -1,0 +1,11 @@
+{
+  "description": "Fixed watchlist for the tests, so editing watchlist/watchlist.json never breaks them.",
+  "tickers": [
+    {"ticker": "AMD", "name": "AMD"},
+    {"ticker": "ANET", "name": "Arista Networks"},
+    {"ticker": "NET", "name": "Cloudflare"},
+    {"ticker": "UI", "name": "Ubiquiti"},
+    {"ticker": "PLTR", "name": "Palantir"},
+    {"ticker": "AAPL", "name": "Apple"}
+  ]
+}
